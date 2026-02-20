@@ -4335,6 +4335,10 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                         .trim();
                     assistantMsg.thinking = fullThinking;
 
+                    // Final render to ensure visual matches stored content
+                    contentElement.innerHTML = this.markdownWorker.renderSync(assistantMsg.content);
+                    MarkdownRenderer.setupListeners(contentElement);
+
                     // Show thinking block if there's thinking content
                     if (fullThinking && fullThinking.trim()) {
                         if (thinkingDetails) {
