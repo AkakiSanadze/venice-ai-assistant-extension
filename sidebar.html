@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Venice AI Assistant</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+  <!-- Skip link for keyboard navigation -->
+  <a href="#chat-container" class="skip-link sr-only" aria-label="Skip to main content">Skip to main content</a>
+
+  <!-- SETUP SCREEN -->
+  <main id="setup-screen" role="main">
+    <div class="logo" aria-hidden="true"><img src="icons/icon-48.png" alt="Venice AI" class="venice-logo"></div>
+    <h1 class="welcome-title">Welcome</h1>
+    <p class="welcome-desc">Enter your API key to use Venice AI</p>
+    <div class="input-group">
+      <label for="api-key-input" class="sr-only">API Key</label>
+      <input type="password" id="api-key-input" placeholder="API Key" aria-label="API Key">
+      <button id="save-api-key" class="btn btn-primary">Get Started</button>
+    </div>
+  </main>
+
+  <!-- SIDEBAR MENU OVERLAY -->
+  <div id="side-menu-overlay" class="menu-overlay hidden"></div>
+
+  <!-- SIDEBAR MENU -->
+  <aside id="side-menu" class="side-menu" role="navigation" aria-label="Main menu">
+    <div class="side-menu-header">
+      <div class="logo" aria-hidden="true"><img src="icons/icon-48.png" alt="Venice AI" class="venice-logo"></div>
+      <span class="menu-title">Venice AI</span>
+      <button id="close-menu-btn" class="btn btn-icon" aria-label="Close menu">
+        <span data-icon="x" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <nav class="side-menu-nav">
+      <div class="nav-section">
+        <div class="nav-item active" data-view="chat-view">
+          <span data-icon="message-circle" aria-hidden="true"></span>
+          <span>Chat</span>
+        </div>
+        <div class="nav-item" data-view="image-view">
+          <span data-icon="image" aria-hidden="true"></span>
+          <span>Image</span>
+        </div>
+        <div class="nav-item" data-view="tts-view">
+          <span data-icon="volume2" aria-hidden="true"></span>
+          <span>Voice</span>
+        </div>
+        <div class="nav-item" data-view="prompts-view">
+          <span data-icon="clipboard-list" aria-hidden="true"></span>
+          <span>Prompts</span>
+        </div>
+      </div>
+
+      <div class="nav-divider"></div>
+
+      <div class="nav-section secondary">
+        <div class="nav-item" id="menu-history-btn">
+          <span data-icon="history" aria-hidden="true"></span>
+          <span style="color:var(--text-primary);">History</span>
+        </div>
+        <div class="nav-item" id="menu-settings-btn">
+          <span data-icon="settings" aria-hidden="true"></span>
+          <span style="color:var(--text-primary);">Settings</span>
+        </div>
+        <div class="nav-item" id="menu-import-shared-btn">
+          <span data-icon="share" aria-hidden="true"></span>
+          <span style="color:var(--text-primary);">Import Chat</span>
+        </div>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- MAIN APP -->
+  <div id="main-app" class="hidden" role="application">
+
+    <!-- HEADER -->
+    <header class="app-header" role="banner">
+      <div class="top-actions">
+        <button id="menu-toggle-btn" class="btn btn-icon" title="Menu" aria-label="Menu">
+          <span data-icon="menu" aria-hidden="true"></span>
+        </button>
+        <div class="model-selector-wrapper">
+          <label for="model-selector" class="sr-only">Select model</label>
+          <select id="model-selector" aria-label="Select model">
+            <!-- Models loaded dynamically -->
+          </select>
+          <button id="model-info-btn" class="btn btn-icon btn-sm model-info-btn" title="Model info" aria-label="Show model information">
+            <span data-icon="info" aria-hidden="true"></span>
+          </button>
+          <div id="model-info-tooltip" class="model-info-tooltip hidden" role="tooltip" aria-live="polite">
+            <!-- Model info loaded dynamically -->
+          </div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="header-tools">
+          <button id="web-search-toggle" class="btn btn-icon btn-sm" title="Web search" aria-label="Web search"
+            aria-pressed="false">
+            <span data-icon="search" aria-hidden="true"></span>
+          </button>
+          <button id="page-context-toggle" class="btn btn-icon btn-sm" title="Page context"
+            aria-label="Page context" aria-pressed="false">
+            <span data-icon="globe" aria-hidden="true"></span>
+          </button>
+          <button id="multi-tab-btn" class="btn btn-icon btn-sm" title="Add tabs to context"
+            aria-label="Add tabs to context" aria-pressed="false">
+            <span data-icon="layers" aria-hidden="true"></span>
+            <span id="multi-tab-count" class="multi-tab-count hidden">0</span>
+          </button>
+          <button id="temporary-chat-toggle" class="btn btn-icon btn-sm" title="Temporary chat"
+            aria-label="Temporary chat" aria-pressed="false">
+            <span data-icon="ghost" aria-hidden="true"></span>
+          </button>
+          <button id="chain-config-btn" class="btn btn-icon btn-sm" title="Chain Templates"
+            aria-label="Chain Templates" aria-pressed="false">
+            <span aria-hidden="true">🔗</span>
+          </button>
+        </div>
+        <button id="new-chat-btn" class="btn btn-primary btn-sm" aria-label="New chat">
+          <span data-icon="plus" aria-hidden="true"></span>
+          <span>New</span>
+        </button>
+        <div class="share-dropdown-wrapper">
+          <button id="share-btn" class="btn btn-icon" title="Share" aria-label="Share" aria-haspopup="true"
+            aria-expanded="false">
+            <span data-icon="share" aria-hidden="true"></span>
+          </button>
+          <div id="share-dropdown" class="dropdown-menu hidden" role="menu" aria-label="Share menu">
+            <button id="copy-markdown-btn" class="dropdown-item" role="menuitem" aria-label="Copy as Markdown">
+              <span data-icon="copy" aria-hidden="true"></span>
+              <span>Copy as Markdown</span>
+            </button>
+            <button id="export-pdf-btn" class="dropdown-item" role="menuitem" aria-label="Export as PDF">
+              <span data-icon="file-text" aria-hidden="true"></span>
+              <span>Export as PDF</span>
+            </button>
+            <button id="share-link-btn" class="dropdown-item" role="menuitem" aria-label="Share link">
+              <span data-icon="share" aria-hidden="true"></span>
+              <span>Share Link</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- SYSTEM PROMPTS BAR -->
+    <nav id="system-prompts-bar" class="horizontal-scroll-container" role="navigation" aria-label="System prompts">
+      <!-- Chips loaded dynamically -->
+    </nav>
+
+    <!-- ========== SUB-VIEWS (only one visible at a time) ========== -->
+
+    <!-- CHAT VIEW -->
+    <section id="chat-view" class="sub-view" role="region" aria-label="Chat">
+      <!-- Temporary mode banner -->
+      <div id="temporary-mode-banner" class="temporary-banner hidden" role="alert">
+        <span>👻 Temporary Mode - Chat won't be saved</span>
+        <button id="save-temporary-chat-btn" class="btn btn-sm" title="Save this chat" aria-label="Save this chat">
+          <span data-icon="save" aria-hidden="true"></span>
+          <span>Save</span>
+        </button>
+      </div>
+      
+      <!-- Chain mode banner -->
+      <div id="chain-mode-banner" class="chain-mode-banner hidden" role="alert">
+        <span class="chain-mode-banner-icon">🔗</span>
+        <span class="chain-mode-banner-text">Chain Mode: <strong id="chain-mode-template-name">No template selected</strong></span>
+        <button id="chain-mode-disable-btn" class="btn btn-sm" title="Disable chain mode" aria-label="Disable chain mode">
+          <span data-icon="x" aria-hidden="true"></span>
+          <span>Disable</span>
+        </button>
+      </div>
+      
+      <!-- Chain Execution Progress Panel -->
+      <div id="chain-execution-panel" class="chain-execution-panel hidden" role="status" aria-live="polite" aria-label="Chain execution progress">
+        <div class="chain-execution-header">
+          <span id="chain-execution-title" class="chain-execution-title">Executing Chain...</span>
+          <span id="chain-execution-progress" class="chain-execution-progress-text">Step 1 of 3</span>
+        </div>
+        <div class="chain-execution-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="chain-progress-fill" class="chain-progress-fill"></div>
+        </div>
+        <div id="chain-execution-output" class="chain-execution-output" aria-label="Chain output">
+          <!-- Streaming output -->
+        </div>
+        <div class="chain-execution-footer">
+          <span id="chain-cost-accumulator" class="chain-cost-accumulator">Cost: $0.0000</span>
+          <button id="chain-stop-btn" class="btn btn-danger btn-sm" aria-label="Stop chain execution">
+            <span data-icon="square" aria-hidden="true"></span>
+            <span>Stop</span>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Chat area wrapper — provides positioning context for scroll-to-bottom btn -->
+      <div class="chat-area-wrapper">
+        <div id="chat-container" role="log" aria-live="polite" aria-label="Chat messages">
+          <!-- Empty state for new conversations -->
+          <div id="chat-empty-state" class="empty-state">
+            <div class="empty-icon" data-icon="message-circle" aria-hidden="true"></div>
+            <div class="empty-title">Start a conversation</div>
+            <div class="empty-description">Ask me anything or try one of these suggestions:</div>
+            <div class="suggestion-chips" role="group" aria-label="Suggested questions">
+              <button class="suggestion-chip" data-suggestion="Explain quantum computing"
+                aria-label="Explain quantum computing">Explain quantum computing</button>
+              <button class="suggestion-chip" data-suggestion="Write me a poem" aria-label="Write me a poem">Write me a poem</button>
+              <button class="suggestion-chip" data-suggestion="Help me write code"
+                aria-label="Help me write code">Help me write code</button>
+            </div>
+          </div>
+          <!-- Messages loaded dynamically -->
+        </div>
+
+        <!-- Scroll to Bottom Button — bottom-right of chat area, above input -->
+        <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" aria-label="Scroll to bottom" title="Scroll to bottom">
+          <span data-icon="chevrons-down" aria-hidden="true"></span>
+        </button>
+      </div><!-- /.chat-area-wrapper -->
+
+      <div class="input-area">
+        <!-- COLLAPSIBLE PROMPTS DRAWER -->
+        <div id="prompts-drawer" class="prompts-drawer" role="region" aria-label="Quick prompts">
+          <button id="prompts-drawer-toggle" class="prompts-drawer-toggle" aria-expanded="false" aria-controls="prompts-drawer-content">
+            <span class="prompts-toggle-icon" aria-hidden="true">⚡</span>
+            <span class="prompts-toggle-label">Prompts</span>
+            <span class="prompts-toggle-count" id="prompts-count-badge"></span>
+            <span class="prompts-toggle-arrow" aria-hidden="true" data-icon="chevron-up"></span>
+          </button>
+          <div id="prompts-drawer-content" class="prompts-drawer-content" aria-hidden="true">
+            <div id="prompts-category-tabs" class="prompts-category-tabs" role="tablist" aria-label="Prompt categories">
+              <!-- Category tabs loaded dynamically -->
+            </div>
+            <div id="prompts-chips-row" class="prompts-chips-row horizontal-scroll-container" role="group" aria-label="Prompt chips">
+              <!-- Prompt chips loaded dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <div class="input-container">
+          <div id="attached-images" class="attached-images hidden" role="group" aria-label="Attached images"></div>
+          <div id="attached-pdf" class="attached-pdf hidden" role="status" aria-live="polite"></div>
+          <label for="message-input" class="sr-only">Type a message</label>
+          <textarea id="message-input" placeholder="Type a message..." rows="1" aria-multiline="true"></textarea>
+          <div class="input-actions">
+            <div class="left-actions">
+              <input type="file" id="image-upload" accept="image/*" multiple hidden aria-hidden="true">
+              <input type="file" id="pdf-upload" accept=".pdf" hidden aria-hidden="true">
+              <button id="attach-btn" class="btn btn-icon" title="Attach image" aria-label="Attach image">
+                <span data-icon="image" aria-hidden="true"></span>
+              </button>
+              <button id="pdf-btn" class="btn btn-icon" title="Attach PDF" aria-label="Attach PDF">
+                <span data-icon="file-text" aria-hidden="true"></span>
+              </button>
+              <!-- Chain Mode Toggle -->
+              <div id="chain-mode-container" class="chain-mode-container">
+                <button id="chain-mode-toggle" class="btn btn-icon chain-mode-toggle" title="Toggle Chain Mode" aria-label="Toggle Chain Mode" aria-pressed="false">
+                  <span aria-hidden="true">🔗</span>
+                </button>
+                <select id="chain-selector" class="chain-selector hidden" aria-label="Select chain template">
+                  <option value="">Select Chain...</option>
+                  <!-- Options populated by JS -->
+                </select>
+              </div>
+            </div>
+            <div class="right-actions">
+              <button id="send-btn" class="btn btn-primary" aria-label="Send">
+                <span data-icon="send" aria-hidden="true"></span>
+              </button>
+              <button id="stop-btn" class="btn btn-icon hidden" aria-label="Stop">
+                <span data-icon="square" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- IMAGE GENERATION VIEW -->
+    <section id="image-view" class="sub-view hidden" role="region" aria-label="Image generation">
+      <div class="sub-view-header">
+        <button class="btn btn-icon back-to-chat" aria-label="Go back">
+          <span data-icon="arrow-left" aria-hidden="true"></span>
+        </button>
+        <span id="image-view-title">Image Generation</span>
+      </div>
+      <div class="list-container">
+        <div class="image-gen-controls" role="form" aria-labelledby="image-view-title">
+          <label for="image-prompt" class="sr-only">Image description</label>
+          <textarea id="image-prompt" placeholder="Describe your image in detail... (you can use 500-1000 words)"
+            rows="6" aria-multiline="true"></textarea>
+          <div class="image-options-row">
+            <label for="image-model-selector" class="sr-only">Select model</label>
+            <select id="image-model-selector" aria-label="Select model"></select>
+            <label for="image-size-selector" class="sr-only">Select size</label>
+            <select id="image-size-selector" aria-label="Select size">
+              <option value="1024x1024">Square</option>
+              <option value="1536x1024">Landscape</option>
+              <option value="1024x1536">Portrait</option>
+            </select>
+          </div>
+          <button id="generate-image-btn" class="btn btn-primary" style="width:100%;" aria-label="Generate image">
+            <span data-icon="sparkles" aria-hidden="true"></span>
+            <span>Generate</span>
+          </button>
+        </div>
+        <div id="image-result" style="margin-top: 20px;" role="img" aria-label="Generated image" aria-live="polite">
+        </div>
+        <div id="image-actions" class="hidden" style="margin-top: 12px; display: flex; gap: 8px;" role="group"
+          aria-label="Image actions">
+          <button id="download-image-btn" class="btn btn-primary" style="flex:1;" aria-label="Download">
+            <span data-icon="download" aria-hidden="true"></span>
+            <span>Download</span>
+          </button>
+          <button id="copy-image-btn" class="btn" style="flex:1;" aria-label="Copy">
+            <span data-icon="copy" aria-hidden="true"></span>
+            <span>Copy</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TTS VIEW -->
+    <section id="tts-view" class="sub-view hidden" role="region" aria-label="Voice generation">
+      <div class="sub-view-header">
+        <button class="btn btn-icon back-to-chat" aria-label="Go back">
+          <span data-icon="arrow-left" aria-hidden="true"></span>
+        </button>
+        <span id="tts-view-title">Voice Generation</span>
+      </div>
+      <div class="list-container">
+        <div class="tts-controls" role="form" aria-labelledby="tts-view-title">
+          <label for="tts-input" class="sr-only">Text to convert to speech</label>
+          <textarea id="tts-input" placeholder="Enter text to convert to speech..." rows="6"
+            aria-multiline="true"></textarea>
+          <div class="tts-char-counter-row">
+            <span id="tts-modified-indicator" class="modified-indicator hidden" title="Text has changed"
+              aria-label="Text has changed">
+              <span data-icon="pencil" aria-hidden="true"></span>
+              <span>Modified</span>
+            </span>
+            <span id="tts-char-counter" class="char-counter" aria-label="Character count">0/5000</span>
+          </div>
+          <div class="tts-options-row">
+            <div class="voice-selector-wrapper">
+              <label for="voice-selector" class="sr-only">Select voice</label>
+              <select id="voice-selector" aria-label="Select voice"></select>
+              <span id="voice-changed-indicator" class="voice-changed-indicator hidden" title="Voice has changed"
+                aria-label="Voice has changed">
+                <span data-icon="refresh-cw" aria-hidden="true"></span>
+              </span>
+            </div>
+            <button id="tts-btn" class="btn btn-primary" aria-label="Generate voice">
+              <span data-icon="volume2" aria-hidden="true"></span>
+              <span>Generate</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="tts-loading" class="tts-loading hidden" role="status" aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <span>Generating audio...</span>
+        </div>
+
+        <!-- Error Display -->
+        <div id="tts-error" class="hidden" role="alert" aria-live="assertive">
+          <!-- Error content generated dynamically by showTTSError() -->
+        </div>
+
+        <!-- TTS Progress Container -->
+        <div id="tts-progress-container" class="tts-progress-container hidden">
+          <div class="tts-progress-bar">
+            <div id="tts-progress-fill" class="tts-progress-fill"></div>
+          </div>
+          <div class="tts-progress-info">
+            <div id="tts-progress-text" class="tts-progress-text">Generating audio...</div>
+            <button id="tts-cancel-btn" class="btn btn-sm btn-ghost tts-cancel-btn">Cancel</button>
+          </div>
+        </div>
+
+        <div id="audio-container" style="margin-top: 20px;" role="region" aria-label="Audio player">
+        </div>
+
+        <!-- Action Buttons -->
+        <div id="tts-actions" class="tts-actions hidden" role="group" aria-label="Voice actions">
+          <button id="regenerate-tts-btn" class="btn btn-primary" style="flex:1;" aria-label="Regenerate">
+            <span data-icon="refresh-cw" aria-hidden="true"></span>
+            <span>Regenerate</span>
+          </button>
+          <button id="download-tts-btn" class="btn" style="flex:1;" aria-label="Download">
+            <span data-icon="download" aria-hidden="true"></span>
+            <span>Download</span>
+          </button>
+          <button id="clear-tts-btn" class="btn btn-icon" title="Clear" aria-label="Clear">
+            <span data-icon="trash-2" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROMPTS VIEW -->
+    <section id="prompts-view" class="sub-view hidden" role="region" aria-label="Prompt manager">
+      <div class="sub-view-header">
+        <button class="btn btn-icon back-to-chat" aria-label="Go back">
+          <span data-icon="arrow-left" aria-hidden="true"></span>
+        </button>
+        <span>Prompt Manager</span>
+      </div>
+      <div class="list-container">
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+          <button id="add-prompt-btn" class="btn btn-primary" style="flex:1;"
+            aria-label="Add new prompt">
+            <span data-icon="plus" aria-hidden="true"></span>
+            <span>New Prompt</span>
+          </button>
+          <button id="manage-categories-btn" class="btn btn-secondary" aria-label="Manage categories">
+            <span data-icon="tag" aria-hidden="true"></span>
+            <span>Categories</span>
+          </button>
+        </div>
+        <div id="prompts-list">
+        </div>
+      </div>
+    </section>
+
+    <!-- SYSTEM PROMPTS VIEW -->
+    <section id="system-prompts-view" class="sub-view hidden" role="region" aria-label="System prompts">
+      <div class="sub-view-header">
+        <button class="btn btn-icon back-to-chat" aria-label="Go back">
+          <span data-icon="arrow-left" aria-hidden="true"></span>
+        </button>
+        <span>System Prompts</span>
+      </div>
+      <div class="list-container">
+        <p class="text-md" style="color:var(--text-muted); margin-bottom:16px;">System prompts change the AI's behavior. Enable the ones you need from the bar above the chat.</p>
+        <button id="add-system-prompt-btn" class="btn btn-primary" style="width:100%; margin-bottom:16px;"
+          aria-label="Add new system prompt">
+          <span data-icon="plus" aria-hidden="true"></span>
+          <span>New System Prompt</span>
+        </button>
+        <div id="system-prompts-list">
+        </div>
+      </div>
+    </section>
+
+    <!-- HISTORY VIEW -->
+    <section id="history-view" class="sub-view hidden" role="region" aria-label="Conversation history">
+      <div class="sub-view-header">
+        <button class="btn btn-icon back-to-chat" aria-label="Go back">
+          <span data-icon="arrow-left" aria-hidden="true"></span>
+        </button>
+        <span>Conversation History</span>
+      </div>
+      <div class="list-container">
+        <label for="history-search" class="sr-only">Search</label>
+        <input type="text" id="history-search" placeholder="Search..." style="width:100%; margin-bottom:12px;">
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+          <label for="folder-filter" class="sr-only">Folder filter</label>
+          <select id="folder-filter" style="flex:1;">
+            <option value="">All Folders</option>
+          </select>
+          <button id="add-folder-btn" class="btn btn-icon" title="New folder" aria-label="New folder">
+            <span data-icon="folder-plus" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div id="folders-list" style="margin-bottom:16px;"></div>
+        <button id="clear-all-history-btn" class="btn"
+          style="width:100%; margin-bottom:12px; background:var(--error); color:white;" aria-label="Delete all chats">
+          <span data-icon="trash-2" aria-hidden="true"></span>
+          <span>Delete All Chats</span>
+        </button>
+        <div id="history-list">
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS VIEW -->
+    <section id="settings-view" class="sub-view hidden" role="region" aria-label="Settings">
+      <div class="sub-view-header">
+        <button class="btn btn-icon back-to-chat" aria-label="Go back">
+          <span data-icon="arrow-left" aria-hidden="true"></span>
+        </button>
+        <span>Settings</span>
+      </div>
+      <div class="list-container">
+        <div class="settings-group">
+          <label for="theme-selector">Theme</label>
+          <select id="theme-selector">
+            <option value="system">System</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label for="font-size-selector">Font Size</label>
+          <select id="font-size-selector">
+            <option value="12">Small (12px)</option>
+            <option value="14">Medium (14px)</option>
+            <option value="16" selected>Large (16px)</option>
+            <option value="18">Large+ (18px)</option>
+            <option value="20">Extra Large (20px)</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label for="font-family-selector">Font</label>
+          <select id="font-family-selector">
+            <option value="Inter">Inter (Default)</option>
+            <option value="Georgia">Georgia (Classic)</option>
+            <option value="Arial">Arial (Simple)</option>
+            <option value="Verdana">Verdana (Clear)</option>
+            <option value="Tahoma">Tahoma (Compact)</option>
+            <option value="system-ui">System</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label for="default-model-selector">Default Model</label>
+          <select id="default-model-selector">
+          </select>
+        </div>
+        <div class="settings-group">
+          <label for="default-tts-voice-selector">Default TTS Voice</label>
+          <select id="default-tts-voice-selector">
+            <option value="af_sky">Sky - Female (US)</option>
+            <option value="am_adam">Adam - Male (US)</option>
+            <option value="bf_emma">Emma - Female (UK)</option>
+          </select>
+          <p class="text-sm" style="color:var(--text-muted); margin-top:8px;">Select the voice used for reading messages aloud</p>
+        </div>
+        <div class="settings-group">
+          <label>Refresh Models</label>
+          <button id="refresh-models-btn" class="btn" style="width:100%;" aria-label="Refresh models">
+            <span data-icon="refresh-cw" aria-hidden="true"></span>
+            <span>Refresh Models</span>
+          </button>
+          <p class="text-sm" style="color:var(--text-muted); margin-top:8px;">Fetch latest models from Venice.ai</p>
+        </div>
+        <div class="settings-group">
+          <label for="settings-api-key">API Key</label>
+          <div style="display:flex; gap:8px;">
+            <input type="password" id="settings-api-key" placeholder="Enter new API Key" style="flex:1;">
+            <button id="update-api-key-btn" class="btn btn-primary" aria-label="Save API key">Save</button>
+          </div>
+        </div>
+        <div class="settings-group" style="margin-top:24px;">
+          <button id="open-system-prompts-btn" class="btn" style="width:100%; margin-bottom:12px;"
+            aria-label="Manage system prompts">
+            <span data-icon="clipboard-list" aria-hidden="true"></span>
+            <span>Manage System Prompts</span>
+          </button>
+        </div>
+        <div class="settings-group">
+          <label>Data Management</label>
+          <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <button id="export-data-btn" class="btn" style="flex:1;" aria-label="Export data">
+              <span data-icon="download" aria-hidden="true"></span>
+              <span>Export</span>
+            </button>
+            <button id="import-data-btn" class="btn" style="flex:1;" aria-label="Import data">
+              <span data-icon="paperclip" aria-hidden="true"></span>
+              <span>Import</span>
+            </button>
+          </div>
+          <input type="file" id="import-file-input" accept=".json" hidden>
+        </div>
+        <div class="settings-group">
+          <label>Import Shared Chat</label>
+          <button id="import-shared-btn" class="btn" style="width:100%;" aria-label="Import shared chat">
+            <span data-icon="share" aria-hidden="true"></span>
+            <span>Import Shared Chat</span>
+          </button>
+        </div>
+        <div class="settings-group">
+          <button id="clear-data-btn" class="btn" style="background:var(--error); color:white; width:100%;"
+            aria-label="Delete all data">
+            <span data-icon="trash-2" aria-hidden="true"></span>
+            <span>Delete All Data</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer Removed to maximize chat space -->
+  </div>
+
+  <!-- Live region for screen reader announcements -->
+  <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- PROMPT EDITOR MODAL -->
+  <div id="prompt-editor-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-editor-title">
+    <div class="modal-content prompt-editor-modal">
+      <div class="modal-header">
+        <h2 id="prompt-editor-title">Edit Prompt</h2>
+        <button id="prompt-editor-close" class="btn btn-icon" aria-label="Close">
+          <span data-icon="x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="prompt-editor-name">Name</label>
+          <input type="text" id="prompt-editor-name" placeholder="Prompt name...">
+        </div>
+        <div class="form-group" id="prompt-editor-category-group">
+          <label for="prompt-editor-category">Category</label>
+          <select id="prompt-editor-category">
+            <option value="youtube">📺 YouTube</option>
+            <option value="social">📱 Social</option>
+            <option value="ecommerce">🛒 Shop</option>
+            <option value="writing">✍️ Write</option>
+            <option value="general">🗂️ General</option>
+            <option value="custom">⭐ Custom</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="prompt-editor-content">Content</label>
+          <textarea id="prompt-editor-content" placeholder="Prompt content..." rows="10"></textarea>
+          <div class="prompt-editor-char-count">
+            <span id="prompt-editor-chars">0</span> characters
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="prompt-editor-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="prompt-editor-save" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MULTI-TAB CONTEXT MODAL -->
+  <div id="multi-tab-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="multi-tab-modal-title">
+    <div class="modal-content multi-tab-modal">
+      <div class="modal-header">
+        <h2 id="multi-tab-modal-title">📄 Add Tabs to Context</h2>
+        <button id="multi-tab-modal-close" class="btn btn-icon" aria-label="Close">
+          <span data-icon="x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="multi-tab-info">Select tabs to include their content in your message. The AI will analyze all selected pages.</p>
+        <div class="multi-tab-search">
+          <input type="text" id="multi-tab-search" placeholder="Search tabs..." aria-label="Search tabs">
+        </div>
+        <div id="multi-tab-list" class="multi-tab-list" role="group" aria-label="Available tabs">
+          <!-- Tabs loaded dynamically -->
+        </div>
+        <div class="multi-tab-footer">
+          <div class="multi-tab-stats">
+            <span id="multi-tab-selected-count">0 tabs selected</span>
+            <span class="multi-tab-tokens" id="multi-tab-tokens">~0 tokens</span>
+          </div>
+          <div class="multi-tab-actions">
+            <button id="multi-tab-select-all" class="btn btn-sm btn-ghost">Select All</button>
+            <button id="multi-tab-clear" class="btn btn-sm btn-ghost">Clear</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="multi-tab-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="multi-tab-add" class="btn btn-primary">Add to Context</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CATEGORIES MANAGER MODAL -->
+  <div id="categories-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="categories-modal-title">
+    <div class="modal-content prompt-editor-modal" style="max-width:420px;">
+      <div class="modal-header">
+        <h2 id="categories-modal-title">Manage Categories</h2>
+        <button id="categories-modal-close" class="btn btn-icon" aria-label="Close">
+          <span data-icon="x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="modal-body" style="padding-bottom:8px;">
+        <div id="categories-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+          <!-- Rendered dynamically -->
+        </div>
+        <!-- Add new category row -->
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="text" id="new-category-emoji" placeholder="😀" maxlength="2"
+            style="width:50px; text-align:center; flex-shrink:0;" aria-label="Category emoji">
+          <input type="text" id="new-category-label" placeholder="Category name..."
+            style="flex:1;" aria-label="Category name">
+          <button id="add-category-btn" class="btn btn-primary btn-sm" aria-label="Add category">
+            <span data-icon="plus" aria-hidden="true"></span>
+            <span>Add</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="categories-modal-done" class="btn btn-primary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAIN CONFIGURATION MODAL -->
+  <div id="chain-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="chain-modal-title">
+    <div class="modal-content chain-modal-content">
+      <div class="modal-header">
+        <h2 id="chain-modal-title">🔗 Chain Templates</h2>
+        <button id="chain-modal-close" class="btn btn-icon" aria-label="Close">
+          <span data-icon="x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="modal-body chain-modal-body">
+        <!-- Template List Section -->
+        <div class="chain-templates-section">
+          <h3 class="chain-section-title">Saved Templates</h3>
+          <div id="chain-templates-list" class="chain-templates-list" role="listbox" aria-label="Saved chain templates">
+            <!-- Templates populated by JS -->
+            <div class="chain-templates-empty" id="chain-templates-empty">No templates saved yet</div>
+          </div>
+          <button id="chain-new-template-btn" class="btn btn-secondary" aria-label="Create new template">
+            <span data-icon="plus" aria-hidden="true"></span>
+            <span>New Template</span>
+          </button>
+        </div>
+        
+        <!-- Step Editor Section -->
+        <div class="chain-editor-section">
+          <div class="chain-editor-header">
+            <label for="chain-name" class="sr-only">Chain name</label>
+            <input type="text" id="chain-name" placeholder="Chain Name" class="chain-name-input" aria-label="Chain name">
+            <label for="chain-description" class="sr-only">Chain description</label>
+            <input type="text" id="chain-description" placeholder="Description (optional)" class="chain-desc-input" aria-label="Chain description">
+          </div>
+          
+          <div id="chain-steps-container" class="chain-steps-container" role="list" aria-label="Chain steps">
+            <!-- Steps populated by JS -->
+          </div>
+          
+          <button id="chain-add-step-btn" class="btn btn-secondary" aria-label="Add step to chain">
+            <span data-icon="plus" aria-hidden="true"></span>
+            <span>Add Step</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="chain-delete-btn" class="btn btn-danger" aria-label="Delete template">
+          <span data-icon="trash-2" aria-hidden="true"></span>
+          <span>Delete</span>
+        </button>
+        <button id="chain-save-btn" class="btn btn-primary" aria-label="Save template">
+          <span data-icon="save" aria-hidden="true"></span>
+          <span>Save Template</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAIN STEP EDITOR TEMPLATE (hidden, used for cloning) -->
+  <template id="chain-step-template">
+    <div class="chain-step" role="listitem">
+      <div class="chain-step-header">
+        <span class="chain-step-number">Step 1</span>
+        <button class="chain-step-remove btn btn-icon btn-sm" title="Remove step" aria-label="Remove step">
+          <span data-icon="x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="chain-step-body">
+        <div class="form-group">
+          <label class="chain-step-label">Step Name</label>
+          <input type="text" class="chain-step-name" placeholder="e.g., Research, Analyze, Summarize" aria-label="Step name">
+        </div>
+        <div class="form-group">
+          <label class="chain-step-label">Model</label>
+          <select class="chain-step-model" aria-label="Select model for this step">
+            <!-- Options populated by JS -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="chain-step-label">Prompt Template</label>
+          <textarea class="chain-step-prompt" rows="4" placeholder="Enter your prompt... Use {input} for user input and {previous_output} for the previous step's output." aria-label="Prompt template"></textarea>
+          <span class="chain-step-hint">Variables: {input} = user input, {previous_output} = last step's result</span>
+        </div>
+        <div class="form-group">
+          <label class="chain-step-label">System Prompt (optional)</label>
+          <textarea class="chain-step-system" rows="2" placeholder="Optional system instructions for this step..." aria-label="System prompt"></textarea>
+        </div>
+        <div class="chain-step-toggles">
+          <label class="toggle-label">
+            <input type="checkbox" class="chain-step-web-search" aria-label="Enable web search for this step">
+            <span>Web Search</span>
+          </label>
+          <label class="toggle-label">
+            <input type="checkbox" class="chain-step-include-previous" checked aria-label="Include previous output">
+            <span>Include Previous Output</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <script src="icons.js"></script>
+  <script src="storage.js"></script>
+  <script src="venice-api.js"></script>
+  <script src="markdown-renderer.js"></script>
+  <script src="pdf-parser.js"></script>
+  <script src="pdf-init.js" type="module"></script>
+  <script src="pdf-export.js"></script>
+  <script src="chain-executor.js"></script>
+  <script src="sidebar.js"></script>
+</body>
+
+</html>
