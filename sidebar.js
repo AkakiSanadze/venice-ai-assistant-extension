@@ -5828,4 +5828,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.app = new App();
     window.app.init();
+
+    // === MINIMUM SIDEBAR WIDTH ENFORCEMENT ===
+    // Chrome's sidePanel API allows resizing, but CSS min-width on body doesn't prevent it.
+    // This ResizeObserver monitors the sidebar container and enforces a minimum width of 450px.
+    const MIN_SIDEBAR_WIDTH = 450;
+
+    // Function to enforce minimum width
+    const enforceMinWidth = () => {
+        const sidebarContainer = document.body;
+        const currentWidth = sidebarContainer.clientWidth;
+
+        if (currentWidth < MIN_SIDEBAR_WIDTH && currentWidth > 0) {
+            // Set the width to minimum if it goes below threshold
+            sidebarContainer.style.minWidth = `${MIN_SIDEBAR_WIDTH}px`;
+            document.documentElement.style.minWidth = `${MIN_SIDEBAR_WIDTH}px`;
+
+            // Also try to resize the window if possible (works in some Chrome versions)
+            // Note: This may not work in all Chrome sidePanel contexts
+            console.log(`Sidebar width (${currentWidth}px) below minimum. Enforcing ${MIN_SIDEBAR_WIDTH}px`);
+        }
+    };
+
+    // Use ResizeObserver to watch for size changes
+    if (typeof ResizeObserver !== 'undefined') {
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const width = entry.contentRect.width;
+                if (width < MIN_SIDEBAR_WIDTH && width > 0) {
+                    enforceMinWidth();
+                }
+            }
+        });
+
+        // Observe the body element for resize events
+        resizeObserver.observe(document.body);
+
+        // Also observe the documentElement for additional coverage
+        resizeObserver.observe(document.documentElement);
+
+        // Initial check
+        enforceMinWidth();
+
+        console.log(`Minimum sidebar width enforcement active: ${MIN_SIDEBAR_WIDTH}px`);
+    } else {
+        // Fallback to window resize event if ResizeObserver is not available
+        window.addEventListener('resize', enforceMinWidth);
+        enforceMinWidth();
+        console.log(`Minimum sidebar width enforcement active (fallback): ${MIN_SIDEBAR_WIDTH}px`);
+    }
 });

@@ -240,6 +240,7 @@
 
 body {
   width: 100%;
+  min-width: 450px;
   height: 100vh;
   font-family: var(--font-main);
   font-size: var(--font-size-base);
@@ -2562,6 +2563,8 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  min-height: 60px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--color-bg-secondary);
   gap: var(--space-3);
@@ -2572,6 +2575,7 @@ header {
   display: flex;
   gap: var(--space-2);
   align-items: center;
+  flex-wrap: wrap;
 }
 
 /* Model selector styling */
@@ -4250,12 +4254,33 @@ select:focus {
 /* --- HEADER REFINEMENT --- */
 .header-tools {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 3px;
   background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
   margin-right: 8px;
   border: 1px solid var(--border-glass);
+}
+
+/* Responsive breakpoint for very narrow widths */
+@media (max-width: 400px) {
+  .app-header,
+  header {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+  }
+
+  .top-actions {
+    justify-content: center;
+  }
+
+  .header-tools {
+    margin-right: 0;
+    justify-content: center;
+  }
 }
 
 .header-tools .btn-icon.active {
