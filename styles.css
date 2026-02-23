@@ -2234,6 +2234,21 @@ select {
   line-height: var(--leading-relaxed);
   word-wrap: break-word;
   overflow-wrap: break-word;
+  /* Phase 2 fix: prevent horizontal scroll, allow vertical content to show */
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+/* Phase 2 fix: Streaming state - ensure content is fully visible during streaming */
+.message.streaming .message-content {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+/* After streaming complete - restore normal overflow */
+.message:not(.streaming) .message-content {
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 /* Message timestamp */

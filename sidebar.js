@@ -3,6 +3,9 @@
  * Main UI Controller for Venice AI Assistant
  */
 
+// Phase 4: Debug mode flag - set window.VENICE_DEBUG = true in console to enable
+// window.VENICE_DEBUG = window.VENICE_DEBUG || false;
+
 /**
  * MarkdownWorkerManager - Manages Web Worker for markdown processing
  * Falls back to main-thread rendering if worker is not available
@@ -3850,6 +3853,10 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
      * Enable virtual scrolling for long conversations
      */
     checkEnableVirtualScroll() {
+        // Phase 3 fix: Don't enable virtual scroll during streaming
+        if (this.isStreaming) {
+            return;
+        }
         const messageCount = this.currentConversation?.messages?.length || 0;
         const shouldEnable = messageCount > 50;
 
@@ -4153,6 +4160,8 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         const generationStartTime = Date.now();
 
         const msgElement = this.renderMessage(assistantMsg, this.currentConversation.messages.length);
+        // Phase 3 fix: Add streaming class to message element
+        msgElement.classList.add('streaming');
         const contentElement = msgElement.querySelector('.message-content');
         const thinkingElement = msgElement.querySelector('.thinking-content');
         const thinkingDetails = msgElement.querySelector('details.thinking');
@@ -4237,8 +4246,11 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                 if (!pendingUpdate) {
                     pendingUpdate = true;
                     requestAnimationFrame(() => {
-                        pendingUpdate = false;
-                        performUIUpdate(latestChunk, latestThinking);
+                        try {
+                            performUIUpdate(latestChunk, latestThinking);
+                        } finally {
+                            pendingUpdate = false;
+                        }
                     });
                 }
             }
@@ -4301,6 +4313,17 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
             }
 
             this.smartScrollToBottom();
+
+            // Phase 4: Debug logging for display issue diagnosis
+            if (window.VENICE_DEBUG) {
+                console.log('[Venice Debug] performUIUpdate:', {
+                    cleanTextLength: cleanText?.length || 0,
+                    lastRenderedContentLength: lastRenderedContentLength,
+                    contentElementExists: !!contentElement,
+                    contentElementConnected: contentElement?.isConnected,
+                    pendingUpdate: pendingUpdate
+                });
+            }
         };
 
         try {
@@ -4317,8 +4340,24 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                     scheduleUIUpdate(chunk, thinking);
                 },
                 async (fullText, fullThinking, usage) => {
+                    // Buffer Flush - ensure any remaining buffered content is rendered
+                    // This prevents race condition on fast models like Venice Small
+                    if (chunkBuffer) {
+                        latestChunk = chunkBuffer;
+                        chunkBuffer = '';
+                    }
+                    if (thinkingBuffer) {
+                        latestThinking = thinkingBuffer;
+                        thinkingBuffer = '';
+                    }
+
                     // Stop timer and remove animations
                     stopThinkingTimer();
+
+                    // Phase 3 fix: Remove streaming class when complete
+                    if (msgElement) {
+                        msgElement.classList.remove('streaming');
+                    }
 
                     this.isStreaming = false;
                     this.announceToScreenReader('Response received');
@@ -4335,9 +4374,44 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                         .trim();
                     assistantMsg.thinking = fullThinking;
 
+                    // DOM Guard - validate contentElement before rendering
+                    let targetElement = contentElement;
+                    if (!targetElement || !targetElement.isConnected) {
+                        // Try to find the message element from the DOM
+                        const msgIndex = this.currentConversation?.messages?.length - 1;
+                        if (msgIndex >= 0) {
+                            const msgEl = this.els.chatContainer?.querySelector(`[data-index="${msgIndex}"]`);
+                            if (msgEl) {
+                                targetElement = msgEl.querySelector('.message-content');
+                            }
+                        }
+                    }
+
                     // Final render to ensure visual matches stored content
-                    contentElement.innerHTML = this.markdownWorker.renderSync(assistantMsg.content);
-                    MarkdownRenderer.setupListeners(contentElement);
+                    if (targetElement) {
+                        // Phase 4: Debug logging for completion
+                        if (window.VENICE_DEBUG) {
+                            console.log('[Venice Debug] onComplete:', {
+                                fullTextLength: fullText?.length || 0,
+                                assistantMsgContentLength: assistantMsg?.content?.length || 0,
+                                targetElementFound: !!targetElement,
+                                targetElementConnected: targetElement?.isConnected
+                            });
+                        }
+
+                        try {
+                            targetElement.innerHTML = this.markdownWorker.renderSync(assistantMsg.content);
+                            MarkdownRenderer.setupListeners(targetElement);
+                        } catch (renderError) {
+                            console.error('[Venice] Markdown render error:', renderError);
+                            // Fallback to plain text if markdown rendering fails
+                            targetElement.textContent = assistantMsg.content;
+                        }
+                    } else {
+                        // Fallback: Re-render all messages if target element cannot be found
+                        console.warn('[Venice] Target element not found, re-rendering all messages');
+                        this.renderMessages();
+                    }
 
                     // Show thinking block if there's thinking content
                     if (fullThinking && fullThinking.trim()) {
@@ -4400,6 +4474,11 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                     // Stop timer
                     stopThinkingTimer();
 
+                    // Phase 3 fix: Remove streaming class on error
+                    if (msgElement) {
+                        msgElement.classList.remove('streaming');
+                    }
+
                     this.isStreaming = false;
 
                     // Remove the empty assistant message element
@@ -4432,6 +4511,12 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
     }
 
     stopGeneration() {
+        // Phase 3 fix: Ensure streaming class is removed on cancel
+        const streamingMsg = this.els.chatContainer?.querySelector('.message.streaming');
+        if (streamingMsg) {
+            streamingMsg.classList.remove('streaming');
+        }
+
         this.api.abortStream();
         this.isStreaming = false;
         this.els.sendBtn.classList.remove('hidden');
