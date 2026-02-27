@@ -232,6 +232,81 @@
   --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08);
 }
 
+/* ==================== READING COMFORT THEME ==================== */
+:root[data-theme="reading"] {
+  /* Background Layers - Warm sepia tones */
+  --color-bg-primary: #FDF6E3;
+  /* Solarized light base */
+  --color-bg-secondary: #F5EFDC;
+  /* Slightly darker warm */
+  --color-bg-tertiary: #EEE8D5;
+  /* Warm tertiary */
+  --color-bg-overlay: #FAF4E4;
+  /* Overlay background */
+
+  /* Legacy aliases for backward compatibility */
+  --bg-primary: var(--color-bg-primary);
+  --bg-secondary: var(--color-bg-secondary);
+  --bg-tertiary: var(--color-bg-tertiary);
+  --bg-glass: rgba(255, 248, 230, 0.7);
+  --border-glass: rgba(139, 119, 82, 0.15);
+
+  /* Text Colors - Soft warm browns */
+  --color-text-primary: #3D3526;
+  /* Deep brown - main text */
+  --color-text-secondary: #5C5344;
+  /* Medium brown */
+  --color-text-muted: #8B7C5E;
+  /* Muted warm */
+  --color-text-disabled: #C4B9A3;
+  /* Disabled state */
+
+  /* Legacy aliases */
+  --text-primary: var(--color-text-primary);
+  --text-secondary: var(--color-text-secondary);
+  --text-muted: var(--color-text-muted);
+
+  /* Accent Colors - Muted warm accent */
+  --color-accent: #B5886D;
+  /* Warm terracotta */
+  --color-accent-hover: #9E7559;
+  /* Darker terracotta */
+  --color-accent-secondary: #8B6F4E;
+  /* Warm brown */
+  --accent-primary: var(--color-accent);
+  --accent-secondary: var(--color-accent-secondary);
+  --accent-gradient: linear-gradient(135deg, #B5886D, #8B6F4E, #7A6145);
+
+  /* Semantic Colors - Adjusted for warm theme */
+  --color-success: #6B8E5F;
+  /* Sage green */
+  --color-warning: #D4A84B;
+  /* Warm gold */
+  --color-error: #C27B6B;
+  /* Muted red */
+  --color-info: #7B9BC7;
+  /* Soft blue */
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --error: var(--color-error);
+
+  /* Message Bubbles */
+  --user-bubble-bg: #E8DCC8;
+  --user-bubble-border: #D4C4A8;
+  --assistant-bubble-bg: #F5EFDC;
+  --assistant-bubble-border: #E0D4BE;
+  --user-bubble: rgba(181, 136, 109, 0.15);
+  --assistant-bubble: rgba(61, 53, 38, 0.05);
+
+  /* Borders */
+  --border-subtle: rgba(139, 119, 82, 0.08);
+  --border-default: rgba(139, 119, 82, 0.15);
+  --border-strong: rgba(139, 119, 82, 0.25);
+
+  /* Shadows */
+  --shadow-glass: 0 8px 32px rgba(139, 119, 82, 0.12);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -1705,6 +1780,53 @@ select {
 /* Light theme adjustments */
 :root[data-theme="light"] .message-stats {
   background: rgba(0, 0, 0, 0.05);
+}
+
+/* Reading Comfort theme adjustments */
+:root[data-theme="reading"] .message-stats {
+  background: rgba(139, 119, 82, 0.08);
+  border-color: rgba(139, 119, 82, 0.15);
+}
+
+:root[data-theme="reading"] .message-user {
+  background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-secondary) 100%);
+}
+
+:root[data-theme="reading"] .message-assistant {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--color-accent);
+}
+
+:root[data-theme="reading"] .chain-step-item {
+  background: var(--color-bg-secondary);
+}
+
+:root[data-theme="reading"] .chain-step-prompt,
+:root[data-theme="reading"] .chain-step-system-prompt {
+  background: var(--color-bg-primary);
+}
+
+:root[data-theme="reading"] .chain-execution-panel {
+  box-shadow: 0 -4px 20px rgba(139, 119, 82, 0.15);
+}
+
+:root[data-theme="reading"] .chain-execution-output {
+  background: var(--color-bg-secondary);
+}
+
+:root[data-theme="reading"] .chain-execution-output .step-output {
+  background: var(--color-bg-tertiary);
+}
+
+:root[data-theme="reading"] .message-audio-player {
+  background: var(--color-bg-secondary);
+  border-color: var(--border-subtle);
+}
+
+:root[data-theme="reading"] .message-tts-progress {
+  background: var(--color-bg-secondary);
+  border-color: var(--border-subtle);
 }
 
 /* === CONTEXT USAGE BAR === */
