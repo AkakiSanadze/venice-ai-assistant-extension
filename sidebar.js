@@ -494,6 +494,7 @@ class App {
         this.currentModel = null;
         this.models = { text: [], image: [], vision: [] };
         this.isStreaming = false;
+        this.isProcessing = false;  // Guard flag to prevent multiple parallel analyses
         this.activeSystemPromptIds = new Set();
         this.isWebSearchEnabled = false;
         this.isPageContextEnabled = true;
@@ -4021,7 +4022,26 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
 
     async handleSendMessage() {
         let content = this.els.messageInput.value.trim();
-        if (!content || this.isStreaming) return;
+        
+        // Guard: Prevent multiple parallel analyses
+        if (this.isProcessing) {
+            console.log('[DEBUG handleSendMessage] BLOCKED - isProcessing:', this.isProcessing);
+            return;
+        }
+        
+        if (!content || this.isStreaming) {
+            console.log('[DEBUG handleSendMessage] BLOCKED - content:', !!content, 'isStreaming:', this.isStreaming);
+            return;
+        }
+        
+        // IMMEDIATELY disable button to prevent race condition
+        // This must happen BEFORE any async operations
+        this.els.sendBtn.disabled = true;
+        this.els.sendBtn.setAttribute('aria-disabled', 'true');
+        this.els.sendBtn.classList.add('processing');
+        
+        // Set guard flag
+        this.isProcessing = true;
 
         // Check if chain mode is enabled and execute chain instead
         if (this.chainModeEnabled && this.activeChainTemplate) {
@@ -4162,6 +4182,12 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
     }
 
     async generateResponse() {
+        // Double-check guard flag (defense in depth)
+        if (this.isStreaming) {
+            console.log('[DEBUG generateResponse] BLOCKED - already streaming');
+            return;
+        }
+        
         this.isStreaming = true;
         this.els.sendBtn.classList.add('hidden');
         this.els.stopBtn.classList.remove('hidden');
@@ -4389,6 +4415,12 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
 
                     this.isStreaming = false;
                     this.announceToScreenReader('Response received');
+                    
+                    // Re-enable button and reset states
+                    this.els.sendBtn.disabled = false;
+                    this.els.sendBtn.removeAttribute('aria-disabled');
+                    this.els.sendBtn.classList.remove('processing');
+                    this.isProcessing = false;
                     // Remove all thinking tag formats from the final content
                     assistantMsg.content = fullText
                         .replace(/<think[\s\S]*?<\/think>/gi, '')
@@ -4530,11 +4562,23 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
 
                     this.els.sendBtn.classList.remove('hidden');
                     this.els.stopBtn.classList.add('hidden');
+                    
+                    // Re-enable button and reset processing state
+                    this.els.sendBtn.disabled = false;
+                    this.els.sendBtn.removeAttribute('aria-disabled');
+                    this.els.sendBtn.classList.remove('processing');
+                    this.isProcessing = false;
                 }
             );
         } catch (e) {
             stopThinkingTimer();
             this.isStreaming = false;
+            
+            // Re-enable button and reset processing state on error
+            this.els.sendBtn.disabled = false;
+            this.els.sendBtn.removeAttribute('aria-disabled');
+            this.els.sendBtn.classList.remove('processing');
+            this.isProcessing = false;
         }
     }
 
@@ -4549,6 +4593,12 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         this.isStreaming = false;
         this.els.sendBtn.classList.remove('hidden');
         this.els.stopBtn.classList.add('hidden');
+        
+        // Re-enable button and reset processing state
+        this.els.sendBtn.disabled = false;
+        this.els.sendBtn.removeAttribute('aria-disabled');
+        this.els.sendBtn.classList.remove('processing');
+        this.isProcessing = false;
     }
 
     // === SMART AUTO-SCROLL ===
