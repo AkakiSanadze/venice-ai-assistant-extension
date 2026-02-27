@@ -720,6 +720,12 @@ class App {
             mode: null,  // 'create' or 'edit'
             existingPrompt: null
         };
+
+        // Message editor state for transcript/message editing
+        this.messageEditorState = {
+            editingIndex: null,
+            isMessageMode: false
+        };
     }
 
     bindEvents() {
@@ -1424,8 +1430,16 @@ class App {
                 }
 
                 if (expandBtn) {
-                    messageEl.classList.remove('collapsed');
-                    expandBtn.style.display = 'none';
+                    const isCollapsed = messageEl.classList.contains('collapsed');
+                    if (isCollapsed) {
+                        messageEl.classList.remove('collapsed');
+                        expandBtn.textContent = '▲ Show less';
+                        expandBtn.title = 'Collapse message';
+                    } else {
+                        messageEl.classList.add('collapsed');
+                        expandBtn.textContent = '▼ Show full message';
+                        expandBtn.title = 'Show full message';
+                    }
                     return;
                 }
             });
@@ -3551,6 +3565,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         if (this.els.promptEditorModal) {
             this.els.promptEditorModal.classList.add('hidden');
         }
+        
         this.promptEditorState = { type: null, mode: null, existingPrompt: null };
     }
 
@@ -3558,6 +3573,11 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
      * Save prompt from the editor modal
      */
     async savePromptFromEditor() {
+        // Check if in message editor mode
+        if (this.messageEditorState.isMessageMode) {
+            return this.saveMessageFromEditor();
+        }
+
         const { type, mode, existingPrompt } = this.promptEditorState;
         const name = this.els.promptEditorName.value.trim();
         const content = this.els.promptEditorContent.value.trim();
@@ -3832,11 +3852,19 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         div.innerHTML = html;
         MarkdownRenderer.setupListeners(div);
 
-        // Bind expand button
+        // Bind expand button with toggle functionality
         div.querySelectorAll('.message-expand-btn').forEach(btn => {
             btn.onclick = () => {
-                div.classList.remove('collapsed');
-                btn.style.display = 'none';
+                const isCollapsed = div.classList.contains('collapsed');
+                if (isCollapsed) {
+                    div.classList.remove('collapsed');
+                    btn.textContent = '▲ Show less';
+                    btn.title = 'Collapse message';
+                } else {
+                    div.classList.add('collapsed');
+                    btn.textContent = '▼ Show full message';
+                    btn.title = 'Show full message';
+                }
             };
         });
 
@@ -5087,17 +5115,93 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         const msg = this.currentConversation.messages[index];
         if (!msg || msg.role !== 'user') return;
 
-        const newContent = prompt('Edit:', msg.content);
-        if (newContent === null || newContent.trim() === '') return;
+        // Use the modal instead of prompt()
+        this.openMessageEditor(index);
+    }
+
+    /**
+     * Open the message editor modal for editing a transcript/message
+     * @param {number} index - The index of the message to edit
+     */
+    openMessageEditor(index) {
+        const msg = this.currentConversation.messages[index];
+        if (!msg || msg.role !== 'user') return;
+
+        // Set message editor state
+        this.messageEditorState = {
+            editingIndex: index,
+            isMessageMode: true
+        };
+
+        // Configure modal for message editing
+        this.els.promptEditorTitle.textContent = 'Edit Message';
+        
+        // Hide name and category fields (not needed for messages)
+        if (this.els.promptEditorName) {
+            this.els.promptEditorName.parentElement.style.display = 'none';
+        }
+        if (this.els.promptEditorCategoryGroup) {
+            this.els.promptEditorCategoryGroup.style.display = 'none';
+        }
+
+        // Pre-fill textarea with message content
+        this.els.promptEditorContent.value = msg.content;
+        this.updatePromptEditorCharCount();
+
+        // Show modal
+        this.els.promptEditorModal.classList.remove('hidden');
+
+        // Focus on content textarea
+        setTimeout(() => this.els.promptEditorContent.focus(), 100);
+    }
+
+    /**
+     * Close the message editor and reset state
+     */
+    closeMessageEditor() {
+        // Reset message editor state
+        this.messageEditorState = {
+            editingIndex: null,
+            isMessageMode: false
+        };
+
+        // Show name and category fields again (for prompt editing)
+        if (this.els.promptEditorName) {
+            this.els.promptEditorName.parentElement.style.display = '';
+        }
+        if (this.els.promptEditorCategoryGroup) {
+            this.els.promptEditorCategoryGroup.style.display = '';
+        }
+
+        // Close the modal using the existing method
+        this.closePromptEditor();
+    }
+
+    /**
+     * Save the message from the editor
+     */
+    async saveMessageFromEditor() {
+        const { editingIndex } = this.messageEditorState;
+        if (editingIndex === null) return;
+
+        const newContent = this.els.promptEditorContent.value.trim();
+        if (newContent === '') {
+            alert('Please enter message content');
+            this.els.promptEditorContent.focus();
+            return;
+        }
+
+        const msg = this.currentConversation.messages[editingIndex];
+        if (!msg) return;
 
         // Update message content
-        msg.content = newContent.trim();
+        msg.content = newContent;
 
         // Remove all messages after this one with exit animation
         const messagesToRemove = [];
         const allMessages = this.els.chatContainer.querySelectorAll('.message');
 
-        for (let i = index; i < allMessages.length; i++) {
+        for (let i = editingIndex; i < allMessages.length; i++) {
             messagesToRemove.push(allMessages[i]);
         }
 
@@ -5105,7 +5209,12 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         await this.animateMessagesExit(messagesToRemove);
 
         // Remove messages from data
-        this.currentConversation.messages = this.currentConversation.messages.slice(0, index + 1);
+        this.currentConversation.messages = this.currentConversation.messages.slice(0, editingIndex + 1);
+
+        // Save immediately to prevent data loss if user closes before response
+        if (!this.isTemporaryMode) {
+            await Storage.saveConversation(this.currentConversation);
+        }
 
         // Generate new response
         this.generateResponse();
