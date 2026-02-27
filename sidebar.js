@@ -7,6 +7,40 @@
 // window.VENICE_DEBUG = window.VENICE_DEBUG || false;
 
 /**
+ * Strip thinking/reasoning tags from AI model output text.
+ * Handles various model-specific formats: Claude, DeepSeek, Qwen, Kimi, etc.
+ * @param {string} text - The text to clean
+ * @returns {string} Text with thinking tags removed
+ */
+function stripThinkingTags(text) {
+    return text
+        // Standard thinking tags
+        .replace(/<think[\s\S]*?<\/think>/gi, '')
+        .replace(/<\|begin_of_thought\|>[\s\S]*?<\|end_of_thought\|>/gi, '')
+        .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+        .replace(/<\|reasoning\|>[\s\S]*?<\/\|reasoning\|>/gi, '')
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+        .replace(/【思考】[\s\S]*?【\/思考】/g, '')
+        .replace(/<\|thought\|>[\s\S]*?<\/\|thought\|>/gi, '')
+        .replace(/<｜[\s\S]*?｜>/g, '')
+        // Kimi-specific tags
+        .replace(/<kimthink>[\s\S]*?<\/kimthink>/gi, '')
+        .replace(/<output>[\s\S]*?<\/output>/gi, '')
+        // Qwen analysis tags
+        .replace(/<｜startofanalysis｜>[\s\S]*?<｜endofanalysis｜>/g, '')
+        // Incomplete tags (streaming ended mid-thinking)
+        .replace(/<think[^>]*>[\s\S]*/gi, '')
+        .replace(/<\|begin_of_thought\|>[\s\S]*/gi, '')
+        .replace(/<reasoning>[\s\S]*/gi, '')
+        .replace(/<thinking>[\s\S]*/gi, '')
+        .replace(/<｜[^>]*>[\s\S]*/gi, '')
+        .replace(/<kimthink>[\s\S]*/gi, '')
+        .replace(/<output>[\s\S]*/gi, '')
+        .replace(/💭\s*Thinking Process[\s\S]*/gi, '')
+        .trim();
+}
+
+/**
  * MarkdownWorkerManager - Manages Web Worker for markdown processing
  * Falls back to main-thread rendering if worker is not available
  */
@@ -4343,18 +4377,8 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                 }
             }
 
-            // Incremental content rendering
-            // Remove all thinking tag formats from the content
-            const cleanText = chunk
-                .replace(/<think[\s\S]*?<\/think>/gi, '')
-                .replace(/<\|begin_of_thought\|>[\s\S]*?<\|end_of_thought\|>/gi, '')
-                .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
-                .replace(/<\|reasoning\|>[\s\S]*?<\/\|reasoning\|>/gi, '')
-                .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-                .replace(/【思考】[\s\S]*?【\/思考】/g, '')
-                .replace(/<\|thought\|>[\s\S]*?<\/\|thought\|>/gi, '')
-                .replace(/💭\s*Thinking Process[\s\S]*/gi, '')
-                .trim();
+            // Incremental content rendering - strip thinking tags using shared helper
+            const cleanText = stripThinkingTags(chunk);
             const newContentLength = cleanText.length;
 
             // Only re-render if there's new content
@@ -4421,17 +4445,8 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                     this.els.sendBtn.removeAttribute('aria-disabled');
                     this.els.sendBtn.classList.remove('processing');
                     this.isProcessing = false;
-                    // Remove all thinking tag formats from the final content
-                    assistantMsg.content = fullText
-                        .replace(/<think[\s\S]*?<\/think>/gi, '')
-                        .replace(/<\|begin_of_thought\|>[\s\S]*?<\|end_of_thought\|>/gi, '')
-                        .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
-                        .replace(/<\|reasoning\|>[\s\S]*?<\/\|reasoning\|>/gi, '')
-                        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-                        .replace(/【思考】[\s\S]*?【\/思考】/g, '')
-                        .replace(/<\|thought\|>[\s\S]*?<\/\|thought\|>/gi, '')
-                        .replace(/💭\s*Thinking Process[\s\S]*/gi, '')
-                        .trim();
+                    // Remove all thinking tag formats from the final content using shared helper
+                    assistantMsg.content = stripThinkingTags(fullText);
                     assistantMsg.thinking = fullThinking;
 
                     // DOM Guard - validate contentElement before rendering
@@ -4455,7 +4470,10 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                                 fullTextLength: fullText?.length || 0,
                                 assistantMsgContentLength: assistantMsg?.content?.length || 0,
                                 targetElementFound: !!targetElement,
-                                targetElementConnected: targetElement?.isConnected
+                                targetElementConnected: targetElement?.isConnected,
+                                // Check expected format
+                                hasMainIdea: assistantMsg?.content?.includes('Main Idea:'),
+                                hasKeyTakeaway: assistantMsg?.content?.includes('Key Takeaway:')
                             });
                         }
 

@@ -662,7 +662,17 @@ class VeniceAPI {
                 { start: '<|reasoning|>', end: '</|reasoning|>', name: 'reasoning_alt' },
                 { start: '<thinking>', end: '</thinking>', name: 'thinking' },
                 { start: '【思考】', end: '【/思考】', name: 'chinese_thinking' },
-                { start: '<|thought|>', end: '</|thought|>', name: 'thought_alt' }
+                { start: '<|thought|>', end: '</|thought|>', name: 'thought_alt' },
+                // Additional patterns for models like Qwen, Kimi, GLM, DeepSeek
+                { start: '<｜', end: '｜>', name: 'qwen_thought' },
+                { start: '<|user|>', end: '</|user|>', name: 'user_tag' },
+                { start: '<|assistant|>', end: '</|assistant|>', name: 'assistant_tag' },
+                // Kimi-specific patterns
+                { start: '<kimthink>', end: '</kimthink>', name: 'kimthink' },
+                { start: '<output>', end: '</output>', name: 'output_tag' },
+                // Qwen analysis patterns
+                { start: '<｜startofanalysis｜>', end: '<｜endofanalysis｜>', name: 'qwen_analysis' },
+                { start: '<reserved_', end: '｜>', name: 'qwen_reserved' }
             ];
 
             // Helper function to detect thinking tags
@@ -715,30 +725,36 @@ class VeniceAPI {
                         }
 
                         if (content) {
-                            // Accumulate raw text (needed for onDone cleanup)
-                            fullText += content;
-
-                            // Detect thinking tags
+                            // Detect thinking tags FIRST to determine what to add to fullText
                             const detected = detectThinkingTag(content);
+                            
                             
                             if (detected) {
                                 if (detected.type === 'start') {
                                     isThinking = true;
+                                    // Extract content after the start tag
                                     const parts = content.split(detected.pattern.start);
-                                    thinkingText += parts[1] || '';
+                                    const afterStart = parts[1] || '';
+                                    thinkingText += afterStart;
+                                    // Don't add to fullText - it's thinking content
                                 } else if (detected.type === 'end') {
                                     isThinking = false;
                                     const endPattern = detected.pattern.end;
                                     const endIdx = content.indexOf(endPattern);
+                                    // Add content before end tag to thinking
                                     thinkingText += content.substring(0, endIdx) || '';
                                     // After closing tag, any remaining text is visible content
-                                    const afterTag = content.substring(endIdx + endPattern.length + 1); // +1 for '>'
+                                    const afterTag = content.substring(endIdx + endPattern.length);
                                     if (afterTag) {
-                                        // visible content after </think>
+                                        fullText += afterTag;
                                     }
                                 }
                             } else if (isThinking) {
+                                // We're in thinking mode, add to thinkingText
                                 thinkingText += content;
+                            } else {
+                                // Not in thinking mode and no tag detected - this is visible content
+                                fullText += content;
                             }
 
                             // Build clean visible text (strip all thinking blocks)
@@ -750,15 +766,55 @@ class VeniceAPI {
                                 .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
                                 .replace(/【思考】[\s\S]*?【\/思考】/g, '')
                                 .replace(/<\|thought\|>[\s\S]*?<\/\|thought\|>/gi, '')
+                                // Qwen-style thinking tags
+                                .replace(/<｜[\s\S]*?｜>/g, '')
+                                // Kimi-specific tags
+                                .replace(/<kimthink>[\s\S]*?<\/kimthink>/gi, '')
+                                .replace(/<output>[\s\S]*?<\/output>/gi, '')
+                                // Qwen analysis tags
+                                .replace(/<｜startofanalysis｜>[\s\S]*?<｜endofanalysis｜>/g, '')
                                 // Strip any incomplete opening think tag (still streaming thinking)
                                 .replace(/<think[^>]*>[\s\S]*/gi, '')
                                 .replace(/<\|begin_of_thought\|>[\s\S]*/gi, '')
                                 .replace(/<reasoning>[\s\S]*/gi, '')
                                 .replace(/<thinking>[\s\S]*/gi, '')
+                                .replace(/<｜[^>]*>[\s\S]*/gi, '')
                                 .trim();
 
                             // Call onChunk with CLEAN visible text (no think tags)
                             onChunk(cleanFullText, thinkingText);
+                            
+                            // Also apply the extraction fix during streaming for models without thinking tags
+                            // If cleanFullText is empty but thinkingText has visible content, extract it
+                            let streamingFullText = cleanFullText;
+                            if (!cleanFullText && thinkingText) {
+                                // Use the same logic as the final extraction - find LAST occurrences
+                                const allMainIdeaMatches = [...thinkingText.matchAll(/Main Idea:\s*([\s\S]*?)(?:\n\n|Key Takeaway:|Watch If:|Skip If:)/gi)];
+                                const allKeyTakeawayMatches = [...thinkingText.matchAll(/Key Takeaway:\s*([\s\S]*?)(?:\n\n|Watch If:|Skip If:)/gi)];
+                                const allWatchIfMatches = [...thinkingText.matchAll(/Watch If:\s*([\s\S]*?)(?:\n\n|Skip If:)/gi)];
+                                const allSkipIfMatches = [...thinkingText.matchAll(/Skip If:\s*([\s\S]*?)$/gim)];
+                                
+                                if (allMainIdeaMatches.length > 0) {
+                                    const lastMainIdea = allMainIdeaMatches[allMainIdeaMatches.length - 1];
+                                    streamingFullText = 'Main Idea: ' + (lastMainIdea[1] ? lastMainIdea[1].trim() : '');
+                                    
+                                    if (allKeyTakeawayMatches.length > 0) {
+                                        const lastKeyTakeaway = allKeyTakeawayMatches[allKeyTakeawayMatches.length - 1];
+                                        if (lastKeyTakeaway[1]) streamingFullText += '\n\nKey Takeaway: ' + lastKeyTakeaway[1].trim();
+                                    }
+                                    if (allWatchIfMatches.length > 0) {
+                                        const lastWatchIf = allWatchIfMatches[allWatchIfMatches.length - 1];
+                                        if (lastWatchIf[1]) streamingFullText += '\n\nWatch If: ' + lastWatchIf[1].trim();
+                                    }
+                                    if (allSkipIfMatches.length > 0) {
+                                        const lastSkipIf = allSkipIfMatches[allSkipIfMatches.length - 1];
+                                        if (lastSkipIf[1]) streamingFullText += '\n\nSkip If: ' + lastSkipIf[1].trim();
+                                    }
+                                }
+                            }
+                            if (streamingFullText !== cleanFullText) {
+                                onChunk(streamingFullText, thinkingText);
+                            }
                         }
                     } catch (e) {
                         console.warn('Malformed stream chunk', e);
@@ -783,7 +839,94 @@ class VeniceAPI {
                 };
             }
             
-            onDone(fullText, thinkingText, usage);
+            
+            // Build clean visible text (strip all thinking blocks) - same logic as in onChunk
+            const cleanFullText = fullText
+                .replace(/<think[\s\S]*?<\/think>/gi, '')
+                .replace(/<\|begin_of_thought\|> [\s\S]*?<\|end_of_thought\|>/gi, '')
+                .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+                .replace(/<\|reasoning\|>[\s\S]*?<\/\|reasoning\|>/gi, '')
+                .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+                .replace(/【思考】[\s\S]*?【\/思考】/g, '')
+                .replace(/<\|thought\|>[\s\S]*?<\/\|thought\|>/gi, '')
+                // Qwen-style thinking tags
+                .replace(/<｜[\s\S]*?｜>/g, '')
+                // Kimi-specific tags
+                .replace(/<kimthink>[\s\S]*?<\/kimthink>/gi, '')
+                .replace(/<output>[\s\S]*?<\/output>/gi, '')
+                // Qwen analysis tags
+                .replace(/<｜startofanalysis｜>[\s\S]*?<｜endofanalysis｜>/g, '')
+                // Strip any incomplete opening think tag (still streaming thinking)
+                .replace(/<think[^>]*>[\s\S]*/gi, '')
+                .replace(/<\|begin_of_thought\|>[\s\S]*/gi, '')
+                .replace(/<reasoning>[\s\S]*/gi, '')
+                .replace(/<thinking>[\s\S]*/gi, '')
+                .replace(/<｜[^>]*>[\s\S]*/gi, '')
+                .replace(/<kimthink>[\s\S]*/gi, '')
+                .replace(/<output>[\s\S]*/gi, '')
+                .trim();
+            
+            // FIX: Handle models that output thinking WITHOUT tags (like Qwen 3.5)
+            // If fullText is empty but thinkingText contains what looks like final output,
+            // try to extract visible content from thinkingText
+            let finalCleanFullText = cleanFullText;
+            if (!cleanFullText && thinkingText) {
+                // Look for the FINAL occurrence of response markers (after thinking is done)
+                // The thinking process typically has "Drafting", "Final Review", "Final Polish" sections
+                // We want the content AFTER "Final Review" or "Final Selection"
+                
+                // First, check for explicit final output markers
+                const finalSelectionMatch = thinkingText.match(/Final Selection:([\s\S]*)/i);
+                const finalOutputMatch = thinkingText.match(/Output:([\s\S]*)/i);
+                const finalAnswerMatch = thinkingText.match(/Final Answer:([\s\S]*)/i);
+                
+                // If no explicit markers, find the last occurrence of Main Idea (after all drafts)
+                const allMainIdeaMatches = [...thinkingText.matchAll(/Main Idea:\s*([\s\S]*?)(?:\n\n|Key Takeaway:|Watch If:|Skip If:)/gi)];
+                const allKeyTakeawayMatches = [...thinkingText.matchAll(/Key Takeaway:\s*([\s\S]*?)(?:\n\n|Watch If:|Skip If:)/gi)];
+                const allWatchIfMatches = [...thinkingText.matchAll(/Watch If:\s*([\s\S]*?)(?:\n\n|Skip If:)/gi)];
+                const allSkipIfMatches = [...thinkingText.matchAll(/Skip If:\s*([\s\S]*?)$/gim)];
+                
+                if (finalSelectionMatch || finalOutputMatch || finalAnswerMatch) {
+                    // Use explicit final output marker
+                    const match = finalSelectionMatch || finalOutputMatch || finalAnswerMatch;
+                    finalCleanFullText = match[1] ? match[1].trim() : '';
+                    // Also try to append other sections if they're near the end
+                    if (allKeyTakeawayMatches.length > 0) {
+                        const lastKeyTakeaway = allKeyTakeawayMatches[allKeyTakeawayMatches.length - 1];
+                        if (lastKeyTakeaway[1]) finalCleanFullText += '\n\nKey Takeaway: ' + lastKeyTakeaway[1].trim();
+                    }
+                    if (allWatchIfMatches.length > 0) {
+                        const lastWatchIf = allWatchIfMatches[allWatchIfMatches.length - 1];
+                        if (lastWatchIf[1]) finalCleanFullText += '\n\nWatch If: ' + lastWatchIf[1].trim();
+                    }
+                    if (allSkipIfMatches.length > 0) {
+                        const lastSkipIf = allSkipIfMatches[allSkipIfMatches.length - 1];
+                        if (lastSkipIf[1]) finalCleanFullText += '\n\nSkip If: ' + lastSkipIf[1].trim();
+                    }
+                } else if (allMainIdeaMatches.length > 0) {
+                    // Use the LAST occurrence of Main Idea (after all drafts)
+                    const lastMainIdea = allMainIdeaMatches[allMainIdeaMatches.length - 1];
+                    finalCleanFullText = 'Main Idea: ' + (lastMainIdea[1] ? lastMainIdea[1].trim() : '');
+                    
+                    // Append the last occurrences of other sections too
+                    if (allKeyTakeawayMatches.length > 0) {
+                        const lastKeyTakeaway = allKeyTakeawayMatches[allKeyTakeawayMatches.length - 1];
+                        if (lastKeyTakeaway[1]) finalCleanFullText += '\n\nKey Takeaway: ' + lastKeyTakeaway[1].trim();
+                    }
+                    if (allWatchIfMatches.length > 0) {
+                        const lastWatchIf = allWatchIfMatches[allWatchIfMatches.length - 1];
+                        if (lastWatchIf[1]) finalCleanFullText += '\n\nWatch If: ' + lastWatchIf[1].trim();
+                    }
+                    if (allSkipIfMatches.length > 0) {
+                        const lastSkipIf = allSkipIfMatches[allSkipIfMatches.length - 1];
+                        if (lastSkipIf[1]) finalCleanFullText += '\n\nSkip If: ' + lastSkipIf[1].trim();
+                    }
+                }
+                
+            }
+            
+            
+            onDone(finalCleanFullText, thinkingText, usage);
         } catch (error) {
             if (error.name !== 'AbortError') onError(error);
         }
