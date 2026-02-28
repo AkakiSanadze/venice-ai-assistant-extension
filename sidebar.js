@@ -184,6 +184,10 @@ class MultiTabContextManager {
         this.selectedTabs = new Map(); // tabId -> { id, title, url, content, tokenCount }
         this.isOpen = false;
         this.allTabs = [];
+        
+        // Context limits
+        this.CONTEXT_LIMIT_CRITICAL = 128000; // Critical threshold
+        this.CONTEXT_LIMIT_WARNING = 100000;   // Warning threshold
     }
 
     /**
@@ -230,15 +234,12 @@ class MultiTabContextManager {
                 try {
                     const transcriptResponse = await chrome.tabs.sendMessage(tabId, { action: 'getYouTubeTranscript' });
                     if (transcriptResponse && transcriptResponse.transcript) {
-                        // Limit content to prevent context overflow
-                        const maxContentLength = 15000;
-                        const content = transcriptResponse.transcript.length > maxContentLength
-                            ? transcriptResponse.transcript.substring(0, maxContentLength) + '...'
-                            : transcriptResponse.transcript;
+                        // No fixed limit - full transcript is fetched
+                        // Context overflow warning will be shown in updateStats based on total calculation
                         return {
                             title: transcriptResponse.title || tab.title || 'YouTube Video',
                             url: tab.url,
-                            content: `[YouTube Transcript]\n${content}`
+                            content: `[YouTube Transcript]\n${transcriptResponse.transcript}`
                         };
                     }
                 } catch (transcriptErr) {
@@ -248,17 +249,14 @@ class MultiTabContextManager {
             }
             
             // Default: get regular page content
+            // No fixed limit - full content is fetched
+            // Context overflow warning will be shown in updateStats based on total calculation
             const response = await chrome.tabs.sendMessage(tabId, { action: 'getPageContent' });
             if (response && response.content) {
-                // Limit content to prevent context overflow
-                const maxContentLength = 10000;
-                const content = response.content.length > maxContentLength
-                    ? response.content.substring(0, maxContentLength) + '...'
-                    : response.content;
                 return {
                     title: response.title || 'Unknown',
                     url: response.url || '',
-                    content: content
+                    content: response.content
                 };
             }
         } catch (e) {
@@ -403,7 +401,8 @@ class MultiTabContextManager {
                     title: tab.title || content.title,
                     url: tab.url || content.url,
                     content: content.content,
-                    tokenCount: this.estimateTokens(content.content)
+                    tokenCount: this.estimateTokens(content.content),
+                    selectedAt: Date.now()
                 });
             }
         }
@@ -425,7 +424,8 @@ class MultiTabContextManager {
                         title: tab.title || content.title,
                         url: tab.url || content.url,
                         content: content.content,
-                        tokenCount: this.estimateTokens(content.content)
+                        tokenCount: this.estimateTokens(content.content),
+                        selectedAt: Date.now()
                     });
                 }
             }
@@ -449,6 +449,7 @@ class MultiTabContextManager {
     updateStats() {
         const countEl = document.getElementById('multi-tab-selected-count');
         const tokensEl = document.getElementById('multi-tab-tokens');
+        const warningEl = document.getElementById('multi-tab-warning');
         
         const count = this.selectedTabs.size;
         let totalTokens = 0;
@@ -461,6 +462,39 @@ class MultiTabContextManager {
         }
         if (tokensEl) {
             tokensEl.textContent = `~${totalTokens.toLocaleString()} tokens`;
+        }
+
+        // Handle warning display
+        if (warningEl) {
+            if (totalTokens > this.CONTEXT_LIMIT_CRITICAL) {
+                // Critical - show truncation options
+                warningEl.innerHTML = `
+                    <div class="multi-tab-warning critical">
+                        <span class="warning-icon">⚠️</span>
+                        <span>Context exceeds 128K tokens (${totalTokens.toLocaleString()})</span>
+                        <button id="multi-tab-truncate-btn" class="btn btn-sm">Fix</button>
+                    </div>
+                `;
+                warningEl.classList.remove('hidden');
+                // Bind the fix button
+                setTimeout(() => {
+                    const fixBtn = document.getElementById('multi-tab-truncate-btn');
+                    if (fixBtn) {
+                        fixBtn.onclick = () => this.showTruncationOptions();
+                    }
+                }, 0);
+            } else if (totalTokens > this.CONTEXT_LIMIT_WARNING) {
+                // Warning only
+                warningEl.innerHTML = `
+                    <div class="multi-tab-warning warning">
+                        <span class="warning-icon">⚡</span>
+                        <span>Approaching context limit (${totalTokens.toLocaleString()}/128K)</span>
+                    </div>
+                `;
+                warningEl.classList.remove('hidden');
+            } else {
+                warningEl.classList.add('hidden');
+            }
         }
 
         // Update header badge
@@ -479,6 +513,89 @@ class MultiTabContextManager {
         if (btnEl) {
             btnEl.classList.toggle('active', count > 0);
         }
+    }
+
+    /**
+     * Show truncation options when context exceeds limit
+     */
+    showTruncationOptions() {
+        const totalTokens = this.getTotalTokens();
+        const excessTokens = totalTokens - this.CONTEXT_LIMIT_CRITICAL;
+        const targetTokens = this.CONTEXT_LIMIT_CRITICAL - 5000; // Leave 5k buffer
+        
+        const options = [
+            `Reduce all tabs by ${Math.round(excessTokens / this.selectedTabs.size)} tokens each`,
+            'Remove all but the most recent tab',
+            'Clear all selected tabs'
+        ];
+        
+        const choice = prompt(
+            `Context exceeds 128K tokens by ${excessTokens.toLocaleString()}.\n` +
+            `Choose how to fix:\n\n` +
+            `1. ${options[0]}\n` +
+            `2. ${options[1]}\n` +
+            `3. ${options[2]}\n\n` +
+            `Enter 1, 2, or 3:`
+        );
+        
+        if (choice === '1') {
+            this.proportionallyReduceContent(targetTokens);
+        } else if (choice === '2') {
+            this.keepOnlyMostRecent();
+        } else if (choice === '3') {
+            this.clearSelection();
+        }
+        
+        this.updateStats();
+    }
+
+    /**
+     * Reduce content proportionally to fit within target tokens
+     */
+    proportionallyReduceContent(targetTokens) {
+        const currentTotal = this.getTotalTokens();
+        if (currentTotal <= targetTokens) return;
+        
+        const ratio = targetTokens / currentTotal;
+        
+        this.selectedTabs.forEach((tab, tabId) => {
+            const currentLength = tab.content.length;
+            const newLength = Math.floor(currentLength * ratio);
+            tab.content = tab.content.substring(0, newLength) + '...[truncated]';
+            tab.tokenCount = this.estimateTokens(tab.content);
+        });
+    }
+
+    /**
+     * Keep only the most recently selected tab
+     */
+    keepOnlyMostRecent() {
+        if (this.selectedTabs.size <= 1) return;
+        
+        // Find the tab with the most recent selection timestamp
+        let mostRecentTabId = null;
+        let mostRecentTime = 0;
+        
+        this.selectedTabs.forEach((tab, tabId) => {
+            const selectionTime = tab.selectedAt || 0;
+            if (selectionTime > mostRecentTime) {
+                mostRecentTime = selectionTime;
+                mostRecentTabId = tabId;
+            }
+        });
+        
+        if (!mostRecentTabId) return;
+        
+        // Clear all except the most recent
+        const keysToDelete = [];
+        this.selectedTabs.forEach((tab, tabId) => {
+            if (tabId !== mostRecentTabId) {
+                keysToDelete.push(tabId);
+            }
+        });
+        
+        keysToDelete.forEach(tabId => this.selectedTabs.delete(tabId));
+        this.renderTabList(document.getElementById('multi-tab-search')?.value || '');
     }
 
     /**

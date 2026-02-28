@@ -49,7 +49,7 @@ function extractMainContent() {
     const toRemove = clone.querySelectorAll('nav, footer, aside, script, style, ad, .ad, .social');
     toRemove.forEach(el => el.remove());
 
-    return clone.innerText.replace(/\s+/g, ' ').trim().slice(0, 15000); // Limit context
+    return clone.innerText.replace(/\s+/g, ' ').trim().slice(0, 50000); // 50K char limit - balances comprehensive content with memory safety
 }
 
 /**
