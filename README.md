@@ -23,6 +23,7 @@ The **Venice AI Assistant** is a powerful, privacy-first Chrome Extension that b
 - 🧠 **Context-Aware Chat:** Instantly summarize articles, analyze Twitter/X threads, or extract YouTube transcripts (even bypassing restrictions) directly from your active tab.
 - 📑 **Multi-Tab Mastery:** Select multiple open tabs at once and feed their combined content to the AI for comprehensive cross-referencing and research.
 - 🔗 **Multi-Step Prompt Chains:** Automate complex workflows. Create chains like "Research Topic ➡️ Summarize Findings ➡️ Translate to Spanish" with a single click.
+- 📚 **Knowledge Base (RAG):** Upload your own documents (PDF, DOCX, TXT, MD) and query them with AI using semantic search. The system extracts text, creates embeddings, and retrieves relevant context for accurate, source-cited answers.
 - 🎨 **Image Generation:** Bring your ideas to life. Generate high-quality images directly within the chat interface using Venice AI's image models.
 - 🗣️ **Text-to-Speech (TTS):** Listen to the AI's responses with natural-sounding voices, perfect for multitasking or accessibility.
 - 📄 **PDF Superpowers:** Upload PDFs for the AI to read and analyze, and export your valuable chat conversations as beautifully formatted PDF documents.

@@ -61,6 +61,10 @@
       <div class="nav-divider"></div>
 
       <div class="nav-section secondary">
+        <div class="nav-item" id="menu-kb-btn">
+          <span data-icon="book-open" aria-hidden="true"></span>
+          <span style="color:var(--text-primary);">Knowledge Base</span>
+        </div>
         <div class="nav-item" id="menu-history-btn">
           <span data-icon="history" aria-hidden="true"></span>
           <span style="color:var(--text-primary);">History</span>
@@ -121,6 +125,11 @@
           <button id="chain-config-btn" class="btn btn-icon btn-sm" title="Chain Templates"
             aria-label="Chain Templates" aria-pressed="false">
             <span aria-hidden="true">🔗</span>
+          </button>
+          <button id="kb-toggle-btn" class="btn btn-icon btn-sm" title="Knowledge Base"
+            aria-label="Knowledge Base" aria-pressed="false">
+            <span data-icon="book-open" aria-hidden="true"></span>
+            <span id="kb-active-count" class="kb-active-count hidden">0</span>
           </button>
         </div>
         <button id="new-chat-btn" class="btn btn-primary btn-sm" aria-label="New chat">
@@ -267,6 +276,23 @@
                   <option value="">Select Chain...</option>
                   <!-- Options populated by JS -->
                 </select>
+              </div>
+              <!-- KB Selector -->
+              <div id="kb-selector-container" class="kb-selector-container">
+                <button id="kb-selector-toggle" class="btn btn-icon" title="Knowledge Base" aria-label="Select Knowledge Base" aria-pressed="false">
+                  <span data-icon="book-open" aria-hidden="true"></span>
+                </button>
+                <div id="kb-selector-dropdown" class="kb-selector-dropdown hidden" role="listbox" aria-label="Knowledge Base selection">
+                  <div class="kb-selector-header">
+                    <span>Knowledge Bases</span>
+                  </div>
+                  <div id="kb-selector-list" class="kb-selector-list">
+                    <!-- KBs populated by JS -->
+                  </div>
+                  <div class="kb-selector-footer">
+                    <button id="manage-kb-btn" class="btn btn-sm btn-ghost">Manage KBs</button>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="right-actions">
@@ -446,6 +472,100 @@
           <span>New System Prompt</span>
         </button>
         <div id="system-prompts-list">
+        </div>
+      </div>
+    </section>
+
+    <!-- KNOWLEDGE BASE VIEW -->
+    <section id="kb-view" class="sub-view hidden" role="region" aria-label="Knowledge Base">
+      <div class="sub-view-header">
+        <button class="btn btn-icon back-to-chat" aria-label="Go back">
+          <span data-icon="arrow-left" aria-hidden="true"></span>
+        </button>
+        <span>Knowledge Base</span>
+      </div>
+      <div class="list-container">
+        <div class="kb-header-actions">
+          <button id="create-kb-btn" class="btn btn-primary" aria-label="Create knowledge base">
+            <span data-icon="plus" aria-hidden="true"></span>
+            <span>New Knowledge Base</span>
+          </button>
+        </div>
+        
+        <!-- KB List -->
+        <div id="kb-list" class="kb-list">
+          <div class="kb-empty-state">
+            <span data-icon="book-open" aria-hidden="true"></span>
+            <p>No knowledge bases yet</p>
+            <p class="text-sm" style="color:var(--text-muted);">Create a knowledge base to upload documents and chat with them</p>
+          </div>
+        </div>
+
+        <!-- KB Detail Panel (hidden by default) -->
+        <div id="kb-details" class="kb-details hidden">
+          <div class="kb-detail-header">
+            <button id="kb-back-btn" class="btn btn-icon" aria-label="Back to list">
+              <span data-icon="arrow-left" aria-hidden="true"></span>
+            </button>
+            <input type="text" id="kb-name-input" placeholder="Knowledge Base Name" aria-label="Knowledge base name">
+            <button id="save-kb-btn" class="btn btn-primary btn-sm" aria-label="Save">Save</button>
+          </div>
+          
+          <div class="kb-detail-info">
+            <h2 id="kb-details-title" class="kb-details-title"></h2>
+            <p id="kb-details-desc" class="kb-details-desc"></p>
+            <textarea id="kb-description-input" placeholder="Description (optional)" rows="2" aria-label="Knowledge base description"></textarea>
+          </div>
+          
+          <div class="kb-stats" id="kb-details-stats">
+            <div class="kb-stat">
+              <span class="kb-stat-value" id="kb-doc-count">0</span>
+              <span class="kb-stat-label">Documents</span>
+            </div>
+            <div class="kb-stat">
+              <span class="kb-stat-value" id="kb-chunk-count">0</span>
+              <span class="kb-stat-label">Chunks</span>
+            </div>
+            <div class="kb-stat">
+              <span class="kb-stat-value" id="kb-token-count">0</span>
+              <span class="kb-stat-label">Tokens</span>
+            </div>
+          </div>
+          
+          <div class="kb-files-section">
+            <div class="kb-files-header">
+              <h3>Files</h3>
+              <button id="kb-add-doc-btn" class="btn btn-secondary btn-sm" aria-label="Add files">
+                <span data-icon="plus" aria-hidden="true"></span>
+                <span>Add Files</span>
+              </button>
+              <input type="file" id="kb-doc-upload" accept=".pdf,.docx,.txt,.md" multiple hidden>
+            </div>
+            <div id="kb-documents-list" class="kb-file-list">
+              <div class="kb-files-empty">No files uploaded yet</div>
+            </div>
+          </div>
+
+          <div class="kb-actions">
+            <button id="delete-kb-btn" class="btn btn-danger" aria-label="Delete knowledge base">
+              <span data-icon="trash-2" aria-hidden="true"></span>
+              <span>Delete Knowledge Base</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- File Processing Progress -->
+        <div id="kb-processing-panel" class="kb-processing-panel hidden">
+          <div class="kb-processing-header">
+            <span id="kb-processing-status">Processing...</span>
+            <button id="kb-processing-cancel" class="btn btn-icon btn-sm" aria-label="Cancel">
+              <span data-icon="x" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="kb-processing-progress">
+            <div id="kb-processing-bar" class="kb-processing-bar"></div>
+          </div>
+          <div id="kb-processing-message" class="kb-processing-message"></div>
         </div>
       </div>
     </section>
@@ -633,6 +753,32 @@
     </div>
   </div>
 
+  <!-- KB EDITOR MODAL -->
+  <div id="kb-editor-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="kb-editor-title">
+    <div class="modal-content prompt-editor-modal">
+      <div class="modal-header">
+        <h2 id="kb-editor-title">Create Knowledge Base</h2>
+        <button id="kb-editor-close" class="btn btn-icon" aria-label="Close">
+          <span data-icon="x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="kb-editor-name">Name</label>
+          <input type="text" id="kb-editor-name" placeholder="Knowledge Base name...">
+        </div>
+        <div class="form-group">
+          <label for="kb-editor-description">Description (optional)</label>
+          <textarea id="kb-editor-description" placeholder="Describe what this knowledge base contains..." rows="4"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="kb-editor-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="kb-editor-create" class="btn btn-primary">Create</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MULTI-TAB CONTEXT MODAL -->
   <div id="multi-tab-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="multi-tab-modal-title">
     <div class="modal-content multi-tab-modal">
@@ -806,6 +952,8 @@
   <script src="pdf-init.js" type="module"></script>
   <script src="pdf-export.js"></script>
   <script src="chain-executor.js"></script>
+  <script src="libs/mammoth.js"></script>
+  <script src="rag-system.js"></script>
   <script src="sidebar.js"></script>
 </body>
 

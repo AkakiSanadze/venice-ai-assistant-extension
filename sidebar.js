@@ -184,7 +184,7 @@ class MultiTabContextManager {
         this.selectedTabs = new Map(); // tabId -> { id, title, url, content, tokenCount }
         this.isOpen = false;
         this.allTabs = [];
-        
+
         // Context limits
         this.CONTEXT_LIMIT_CRITICAL = 128000; // Critical threshold
         this.CONTEXT_LIMIT_WARNING = 100000;   // Warning threshold
@@ -228,7 +228,7 @@ class MultiTabContextManager {
             // Get tab info to check if it's a YouTube video page
             const tab = this.allTabs.find(t => t.id === tabId);
             const isYouTubeVideo = tab?.url?.includes('youtube.com/watch') && tab.url.includes('v=');
-            
+
             if (isYouTubeVideo) {
                 // Try to get YouTube transcript first
                 try {
@@ -247,7 +247,7 @@ class MultiTabContextManager {
                     // Fall through to regular page content
                 }
             }
-            
+
             // Default: get regular page content
             // No fixed limit - full content is fetched
             // Context overflow warning will be shown in updateStats based on total calculation
@@ -271,7 +271,7 @@ class MultiTabContextManager {
     async openModal() {
         this.isOpen = true;
         this.app.els.multiTabModal.classList.remove('hidden');
-        
+
         // Show loading state
         const listEl = document.getElementById('multi-tab-list');
         listEl.innerHTML = `
@@ -283,11 +283,11 @@ class MultiTabContextManager {
 
         // Get all tabs
         this.allTabs = await this.getAllTabs();
-        
+
         // Render tab list
         this.renderTabList();
         this.updateStats();
-        
+
         // Focus search input
         const searchInput = document.getElementById('multi-tab-search');
         if (searchInput) {
@@ -313,10 +313,10 @@ class MultiTabContextManager {
 
         // Filter tabs by search query
         const filteredTabs = filter
-            ? this.allTabs.filter(tab => 
+            ? this.allTabs.filter(tab =>
                 tab.title?.toLowerCase().includes(filter.toLowerCase()) ||
                 tab.url?.toLowerCase().includes(filter.toLowerCase())
-              )
+            )
             : this.allTabs;
 
         if (filteredTabs.length === 0) {
@@ -336,10 +336,10 @@ class MultiTabContextManager {
         listEl.innerHTML = filteredTabs.map(tab => {
             const isSelected = this.selectedTabs.has(tab.id);
             const isCurrentTab = tab.id === currentTabId;
-            const favicon = tab.favIconUrl 
+            const favicon = tab.favIconUrl
                 ? `<img src="${tab.favIconUrl}" class="multi-tab-favicon" alt="">`
                 : `<div class="multi-tab-favicon placeholder">📄</div>`;
-            
+
             // Estimate tokens from cached content or mark as pending
             const cachedData = this.selectedTabs.get(tab.id);
             const tokenEstimate = cachedData?.tokenCount || '~?';
@@ -450,7 +450,7 @@ class MultiTabContextManager {
         const countEl = document.getElementById('multi-tab-selected-count');
         const tokensEl = document.getElementById('multi-tab-tokens');
         const warningEl = document.getElementById('multi-tab-warning');
-        
+
         const count = this.selectedTabs.size;
         let totalTokens = 0;
         this.selectedTabs.forEach(tab => {
@@ -522,13 +522,13 @@ class MultiTabContextManager {
         const totalTokens = this.getTotalTokens();
         const excessTokens = totalTokens - this.CONTEXT_LIMIT_CRITICAL;
         const targetTokens = this.CONTEXT_LIMIT_CRITICAL - 5000; // Leave 5k buffer
-        
+
         const options = [
             `Reduce all tabs by ${Math.round(excessTokens / this.selectedTabs.size)} tokens each`,
             'Remove all but the most recent tab',
             'Clear all selected tabs'
         ];
-        
+
         const choice = prompt(
             `Context exceeds 128K tokens by ${excessTokens.toLocaleString()}.\n` +
             `Choose how to fix:\n\n` +
@@ -537,7 +537,7 @@ class MultiTabContextManager {
             `3. ${options[2]}\n\n` +
             `Enter 1, 2, or 3:`
         );
-        
+
         if (choice === '1') {
             this.proportionallyReduceContent(targetTokens);
         } else if (choice === '2') {
@@ -545,7 +545,7 @@ class MultiTabContextManager {
         } else if (choice === '3') {
             this.clearSelection();
         }
-        
+
         this.updateStats();
     }
 
@@ -555,9 +555,9 @@ class MultiTabContextManager {
     proportionallyReduceContent(targetTokens) {
         const currentTotal = this.getTotalTokens();
         if (currentTotal <= targetTokens) return;
-        
+
         const ratio = targetTokens / currentTotal;
-        
+
         this.selectedTabs.forEach((tab, tabId) => {
             const currentLength = tab.content.length;
             const newLength = Math.floor(currentLength * ratio);
@@ -571,11 +571,11 @@ class MultiTabContextManager {
      */
     keepOnlyMostRecent() {
         if (this.selectedTabs.size <= 1) return;
-        
+
         // Find the tab with the most recent selection timestamp
         let mostRecentTabId = null;
         let mostRecentTime = 0;
-        
+
         this.selectedTabs.forEach((tab, tabId) => {
             const selectionTime = tab.selectedAt || 0;
             if (selectionTime > mostRecentTime) {
@@ -583,9 +583,9 @@ class MultiTabContextManager {
                 mostRecentTabId = tabId;
             }
         });
-        
+
         if (!mostRecentTabId) return;
-        
+
         // Clear all except the most recent
         const keysToDelete = [];
         this.selectedTabs.forEach((tab, tabId) => {
@@ -593,7 +593,7 @@ class MultiTabContextManager {
                 keysToDelete.push(tabId);
             }
         });
-        
+
         keysToDelete.forEach(tabId => this.selectedTabs.delete(tabId));
         this.renderTabList(document.getElementById('multi-tab-search')?.value || '');
     }
@@ -704,6 +704,12 @@ class App {
         const apiKey = await Storage.getApiKey();
         if (apiKey) {
             this.api.setApiKey(apiKey);
+
+            // Initialize RAG System
+            if (window.ragSystem) {
+                await window.ragSystem.init(this.api);
+            }
+
             await this.showMainApp();
         } else {
             this.showSetupScreen();
@@ -863,7 +869,36 @@ class App {
             // Multi-Tab Context Modal
             multiTabBtn: document.getElementById('multi-tab-btn'),
             multiTabCount: document.getElementById('multi-tab-count'),
-            multiTabModal: document.getElementById('multi-tab-modal')
+            multiTabModal: document.getElementById('multi-tab-modal'),
+
+            // Knowledge Base
+            menuKbBtn: document.getElementById('menu-kb-btn'),
+            kbView: document.getElementById('kb-view'),
+            createKbBtn: document.getElementById('create-kb-btn'),
+            kbToggleBtn: document.getElementById('kb-toggle-btn'),
+            kbSelectorContainer: document.getElementById('kb-selector-container'),
+            kbSelectorToggle: document.getElementById('kb-selector-toggle'),
+            kbSelectorDropdown: document.getElementById('kb-selector-dropdown'),
+            manageKbBtn: document.getElementById('manage-kb-btn'),
+            kbList: document.getElementById('kb-list'),
+            kbDetails: document.getElementById('kb-details'),
+            kbDetailsTitle: document.getElementById('kb-details-title'),
+            kbDetailsDesc: document.getElementById('kb-details-desc'),
+            kbDetailsStats: document.getElementById('kb-details-stats'),
+            kbDocumentsList: document.getElementById('kb-documents-list'),
+            kbAddDocBtn: document.getElementById('kb-add-doc-btn'),
+            kbDocUpload: document.getElementById('kb-doc-upload'),
+            kbBackBtn: document.getElementById('kb-back-btn'),
+            kbDeleteBtn: document.getElementById('delete-kb-btn'),
+            saveKbBtn: document.getElementById('save-kb-btn'),
+
+            // KB Editor Modal
+            kbEditorModal: document.getElementById('kb-editor-modal'),
+            kbEditorName: document.getElementById('kb-editor-name'),
+            kbEditorDescription: document.getElementById('kb-editor-description'),
+            kbEditorClose: document.getElementById('kb-editor-close'),
+            kbEditorCancel: document.getElementById('kb-editor-cancel'),
+            kbEditorCreate: document.getElementById('kb-editor-create')
         };
 
         // Prompt editor state
@@ -1376,6 +1411,119 @@ class App {
             });
         }
 
+        // === KNOWLEDGE BASE ===
+        if (this.els.menuKbBtn) {
+            this.els.menuKbBtn.onclick = () => {
+                this.toggleMenu(false);
+                this.openKnowledgeBase();
+            };
+        }
+
+        if (this.els.createKbBtn) {
+            this.els.createKbBtn.onclick = () => this.handleCreateKB();
+        }
+
+        if (this.els.kbToggleBtn) {
+            this.els.kbToggleBtn.onclick = () => this.openKnowledgeBase();
+        }
+
+        if (this.els.kbSelectorToggle) {
+            this.els.kbSelectorToggle.onclick = async (e) => {
+                e.stopPropagation();
+                const isHidden = this.els.kbSelectorDropdown.classList.contains('hidden');
+                if (isHidden) {
+                    // Refresh the list before showing
+                    try {
+                        await this.updateKBSelector();
+                    } catch (err) {
+                        console.error('Error updating KB selector:', err);
+                    }
+                    // Position the dropdown above the toggle button using fixed positioning
+                    // This escapes all parent stacking contexts (input-container, input-actions, etc.)
+                    const rect = this.els.kbSelectorToggle.getBoundingClientRect();
+                    const dropdownHeight = 320; // max-height from CSS
+                    const dropdownWidth = 280; // width from CSS
+                    const top = Math.max(8, rect.top - dropdownHeight - 8);
+                    const left = Math.min(rect.left, window.innerWidth - dropdownWidth - 8);
+                    this.els.kbSelectorDropdown.style.top = top + 'px';
+                    this.els.kbSelectorDropdown.style.left = left + 'px';
+                    this.els.kbSelectorDropdown.classList.remove('hidden');
+                } else {
+                    this.els.kbSelectorDropdown.classList.add('hidden');
+                }
+            };
+        }
+
+        if (this.els.manageKbBtn) {
+            this.els.manageKbBtn.onclick = () => {
+                this.els.kbSelectorDropdown.classList.add('hidden');
+                this.openKnowledgeBase();
+            };
+        }
+
+        if (this.els.kbBackBtn) {
+            this.els.kbBackBtn.onclick = () => {
+                this.els.kbDetails.classList.add('hidden');
+                this.els.kbList.classList.remove('hidden');
+                this.renderKBList();
+            };
+        }
+
+        if (this.els.kbAddDocBtn) {
+            this.els.kbAddDocBtn.onclick = () => this.els.kbDocUpload.click();
+        }
+
+        if (this.els.kbDocUpload) {
+            this.els.kbDocUpload.onchange = (e) => this.handleAddKBDocuments(e);
+        }
+
+        // Q2 Fix: bind cancel button in processing panel
+        const processingCancel = document.getElementById('kb-processing-cancel');
+        if (processingCancel) {
+            processingCancel.onclick = () => {
+                const panel = document.getElementById('kb-processing-panel');
+                if (panel) panel.classList.add('hidden');
+                // Note: Actual cancellation of ongoing logic requires AbortController integration
+                // for now we just hide the panel to improve UX.
+            };
+        }
+
+        if (this.els.kbDeleteBtn) {
+            this.els.kbDeleteBtn.onclick = () => this.handleDeleteCurrentKB();
+        }
+
+        if (this.els.saveKbBtn) {
+            this.els.saveKbBtn.onclick = () => this.handleSaveKB();
+        }
+
+        // KB Editor Modal events
+        if (this.els.kbEditorClose) {
+            this.els.kbEditorClose.onclick = () => this.closeKBEditor();
+        }
+        if (this.els.kbEditorCancel) {
+            this.els.kbEditorCancel.onclick = () => this.closeKBEditor();
+        }
+        if (this.els.kbEditorCreate) {
+            this.els.kbEditorCreate.onclick = () => this.confirmCreateKB();
+        }
+        if (this.els.kbEditorModal) {
+            this.els.kbEditorModal.onclick = (e) => {
+                if (e.target === this.els.kbEditorModal) {
+                    this.closeKBEditor();
+                }
+            };
+        }
+
+        // Close KB dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (this.els.kbSelectorDropdown &&
+                !this.els.kbSelectorDropdown.classList.contains('hidden') &&
+                !this.els.kbSelectorDropdown.contains(e.target) &&
+                !this.els.kbSelectorToggle.contains(e.target)) {
+                this.els.kbSelectorDropdown.classList.add('hidden');
+            }
+        });
+
         // === MODEL INFO TOOLTIP ===
         if (this.els.modelInfoBtn && this.els.modelInfoTooltip) {
             this.els.modelInfoBtn.onclick = (e) => {
@@ -1385,7 +1533,7 @@ class App {
 
             // Close tooltip when clicking outside
             document.addEventListener('click', (e) => {
-                if (this.els.modelInfoTooltip && 
+                if (this.els.modelInfoTooltip &&
                     !this.els.modelInfoTooltip.classList.contains('hidden') &&
                     !this.els.modelInfoTooltip.contains(e.target) &&
                     !this.els.modelInfoBtn.contains(e.target)) {
@@ -1423,9 +1571,14 @@ class App {
         }
         // Escape key to close modal (additional handler)
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.els.promptEditorModal && 
+            if (e.key === 'Escape' && this.els.promptEditorModal &&
                 !this.els.promptEditorModal.classList.contains('hidden')) {
                 this.closePromptEditor();
+            }
+            // Close KB Editor modal on Escape
+            if (e.key === 'Escape' && this.els.kbEditorModal &&
+                !this.els.kbEditorModal.classList.contains('hidden')) {
+                this.closeKBEditor();
             }
         });
 
@@ -1607,7 +1760,7 @@ class App {
         if (!this.els.modelInfoTooltip) return;
 
         const isHidden = this.els.modelInfoTooltip.classList.contains('hidden');
-        
+
         if (isHidden) {
             this.updateModelInfoTooltip();
             this.els.modelInfoTooltip.classList.remove('hidden');
@@ -1858,6 +2011,16 @@ class App {
         // Initialize smart auto-scroll
         this.initSmartScroll();
 
+        // Initialize Knowledge Base selector
+        if (window.ragSystem && window.ragSystem.kbManager) {
+            // Bug 6 Fix: Restore activeKBId on initialization
+            const settings = await Storage.getSettings();
+            if (settings && settings.activeKBId) {
+                await window.ragSystem.kbManager.activateKB(settings.activeKBId);
+            }
+            await this.updateKBSelector();
+        }
+
         // Initialize chain mode
         await this.initChainMode();
     }
@@ -2088,16 +2251,16 @@ class App {
                     <button class="chain-use-btn" title="Use in Chat">💬 Use</button>
                 </div>
             `;
-            
+
             // Click on info area to edit
             item.querySelector('.chain-template-info').addEventListener('click', () => this.loadChainTemplate(template.id));
-            
+
             // Click "Use" button to activate in chat
             item.querySelector('.chain-use-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.activateChainTemplate(template.id);
             });
-            
+
             list.appendChild(item);
         });
     }
@@ -2109,29 +2272,29 @@ class App {
     activateChainTemplate(templateId) {
         // Enable chain mode
         this.chainModeEnabled = true;
-        
+
         // Set active template
         this.activeChainTemplate = this.chainTemplates.find(t => t.id === templateId);
-        
+
         // Update UI
         const toggle = document.getElementById('chain-mode-toggle');
         const selector = document.getElementById('chain-selector');
         const banner = document.getElementById('chain-mode-banner');
         const chatView = document.getElementById('chat-view');
-        
+
         toggle?.classList.add('active');
         selector?.classList.remove('hidden');
         banner?.classList.remove('hidden');
         chatView?.classList.add('chain-mode-active');
-        
+
         // Set selector value
         if (selector) {
             selector.value = templateId;
         }
-        
+
         // Show banner
         this.updateChainModeBanner();
-        
+
         // Close modal
         this.closeChainModal();
     }
@@ -2239,7 +2402,7 @@ class App {
         if (modelSelect && this.models && this.models.textModels) {
             // Clear existing options
             modelSelect.innerHTML = '<option value="">Select Model...</option>';
-            
+
             // Add models from the app's model list
             this.models.textModels.forEach(model => {
                 const option = document.createElement('option');
@@ -2406,10 +2569,10 @@ class App {
                     const stepDiv = document.createElement('div');
                     stepDiv.className = 'chain-step-output';
                     stepDiv.id = `step-output-${index}`;
-                    
+
                     // Get model display name
                     const modelDisplayName = this.getModelDisplayName(step.model);
-                    
+
                     stepDiv.innerHTML = `
                         <div class="chain-step-output-header">
                             <span class="step-number">Step ${index + 1}</span>
@@ -2423,7 +2586,7 @@ class App {
                         <div class="chain-step-output-content"></div>
                     `;
                     outputArea.appendChild(stepDiv);
-                    
+
                     // Scroll to show the new step
                     outputArea.scrollTop = outputArea.scrollHeight;
                 },
@@ -2444,7 +2607,7 @@ class App {
                             contentEl.innerHTML = this.markdownWorker.renderSync(chunk);
                         }
                     }
-                    
+
                     // Scroll to bottom of output area
                     const outputArea = document.getElementById('chain-execution-output');
                     if (outputArea) {
@@ -2503,7 +2666,7 @@ class App {
             // Save the conversation if not in temporary mode
             if (!this.isTemporaryMode) {
                 // Update conversation title from first user message if this is the first exchange
-                if (this.currentConversation.messages.length === 1 && 
+                if (this.currentConversation.messages.length === 1 &&
                     this.currentConversation.messages[0].role === 'user') {
                     const userContent = this.currentConversation.messages[0].content;
                     this.currentConversation.title = userContent.substring(0, 40) + (userContent.length > 40 ? '...' : '');
@@ -2532,7 +2695,7 @@ class App {
      */
     getModelDisplayName(modelId) {
         if (!modelId) return 'Unknown Model';
-        
+
         // Try to find the model in our loaded models list
         if (this.models && this.models.textModels) {
             const model = this.models.textModels.find(m => m.id === modelId);
@@ -2540,9 +2703,9 @@ class App {
                 return model.model_spec.name;
             }
         }
-        
+
         // Fallback: clean up the model ID for display
-        return modelId.split('/').pop().split('-').map(word => 
+        return modelId.split('/').pop().split('-').map(word =>
             word.charAt(0).toUpperCase() + word.slice(1)
         ).join(' ');
     }
@@ -2570,11 +2733,17 @@ class App {
             <div class="chain-error-header">Error in Step ${stepIndex + 1}</div>
             <div class="chain-error-message">${error.message || error}</div>
             <div class="chain-error-actions">
-                <button class="btn-secondary" onclick="window.app.retryChainStep(${stepIndex})">Retry Step</button>
-                <button class="btn-secondary" onclick="window.app.skipChainStep(${stepIndex})">Skip Step</button>
-                <button class="btn-danger" onclick="window.app.stopChainExecution()">Abort Chain</button>
+                <button class="btn-secondary chain-retry-btn" data-step-index="${stepIndex}">Retry Step</button>
+                <button class="btn-secondary chain-skip-btn" data-step-index="${stepIndex}">Skip Step</button>
+                <button class="btn-danger chain-abort-btn">Abort Chain</button>
             </div>
         `;
+
+        // Bind click events via JavaScript instead of inline handlers
+        errorDiv.querySelector('.chain-retry-btn').onclick = () => this.retryChainStep(stepIndex);
+        errorDiv.querySelector('.chain-skip-btn').onclick = () => this.skipChainStep(stepIndex);
+        errorDiv.querySelector('.chain-abort-btn').onclick = () => this.stopChainExecution();
+
         outputArea.appendChild(errorDiv);
     }
 
@@ -2608,7 +2777,7 @@ class App {
         const completionCostPer1k = 0.002;
 
         return (promptTokens * promptCostPer1k / 1000) +
-               (completionTokens * completionCostPer1k / 1000);
+            (completionTokens * completionCostPer1k / 1000);
     }
 
     /**
@@ -2850,6 +3019,11 @@ class App {
                 item.removeAttribute('aria-current');
             }
         });
+
+        // Update KB header button active state - only active when KB view is open
+        if (viewId !== 'kb-view' && this.els.kbToggleBtn) {
+            this.els.kbToggleBtn.classList.remove('active');
+        }
 
         // Close menu after selection
         this.toggleMenu(false);
@@ -3099,6 +3273,432 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         if (!confirm('Are you sure you want to delete all chats? This action cannot be undone.')) return;
         await Storage.deleteAllConversations();
         await this.loadHistory();
+    }
+
+    // === KNOWLEDGE BASE ===
+
+    /**
+     * Escape HTML to prevent XSS
+     * @param {string} text - The text to escape
+     * @returns {string} Escaped HTML text
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    async openKnowledgeBase() {
+        this.switchView('kb-view');
+        this.els.kbDetails.classList.add('hidden');
+        this.els.kbList.classList.remove('hidden');
+
+        // Update header button active state
+        if (this.els.kbToggleBtn) {
+            this.els.kbToggleBtn.classList.add('active');
+        }
+
+        await this.renderKBList();
+    }
+
+    async renderKBList() {
+        if (!this.els.kbList) return;
+
+        // Ensure kbManager is initialized before trying to use it
+        if (!window.ragSystem || !window.ragSystem.kbManager) {
+            console.warn('[App] Cannot render KB list: RAG system or KB Manager not initialized.');
+            return;
+        }
+
+        const kbs = await window.ragSystem.kbManager.getAllKnowledgeBases();
+
+        if (kbs.length === 0) {
+            this.els.kbList.innerHTML = `
+                <div class="kb-empty-state">
+                    <div class="kb-empty-icon">📚</div>
+                    <p>No knowledge bases yet. Create one to get started!</p>
+                    <button class="btn btn-primary kb-create-btn">Create Knowledge Base</button>
+                </div>
+            `;
+            // Bind click event via JavaScript instead of inline handler
+            this.els.kbList.querySelector('.kb-create-btn').onclick = () => this.handleCreateKB();
+            return;
+        }
+
+        this.els.kbList.innerHTML = kbs.map(kb => `
+            <div class="kb-item" data-kb-id="${kb.id}">
+                <div class="kb-item-info">
+                    <div class="kb-item-title">${this.escapeHtml(kb.name)}</div>
+                    <div class="kb-item-meta">${kb.documentCount || 0} documents · ${kb.totalChunks || 0} chunks</div>
+                </div>
+                <div class="kb-item-actions">
+                    <button class="btn btn-icon kb-manage-btn" data-kb-id="${kb.id}" title="Manage">${Icons.create('settings', { size: 16 })}</button>
+                </div>
+            </div>
+        `).join('');
+
+        // Bug 2 Fix: clicking anywhere on a KB item opens its details
+        this.els.kbList.querySelectorAll('.kb-item').forEach(item => {
+            item.onclick = () => {
+                this.loadKBDetails(item.dataset.kbId);
+            };
+        });
+
+        Icons.replaceAllInDocument();
+    }
+
+    async handleCreateKB() {
+        // Open the KB editor modal instead of using browser prompt
+        this.openKBEditor();
+    }
+
+    openKBEditor() {
+        if (!this.els.kbEditorModal) return;
+
+        // Clear previous values
+        this.els.kbEditorName.value = '';
+        this.els.kbEditorDescription.value = '';
+
+        // Show modal
+        this.els.kbEditorModal.classList.remove('hidden');
+        this.els.kbEditorName.focus();
+    }
+
+    closeKBEditor() {
+        if (!this.els.kbEditorModal) return;
+        this.els.kbEditorModal.classList.add('hidden');
+    }
+
+    async confirmCreateKB() {
+        const name = this.els.kbEditorName.value.trim();
+        if (!name) {
+            this.els.kbEditorName.focus();
+            return;
+        }
+
+        const description = this.els.kbEditorDescription.value.trim();
+
+        try {
+            const kb = await window.ragSystem.kbManager.createKnowledgeBase(name, description);
+            this.showToast(`Knowledge Base "${kb.name}" created`, 'success');
+            this.closeKBEditor();
+            await this.renderKBList();
+            await this.updateKBSelector();
+        } catch (e) {
+            alert('Error creating Knowledge Base: ' + e.message);
+        }
+    }
+
+    async loadKBDetails(kbId) {
+        // First update KB metadata to ensure counts are fresh
+        await window.ragSystem.kbManager.updateKBMetadata(kbId);
+
+        const kb = await window.ragSystem.kbManager.getKnowledgeBase(kbId);
+        if (!kb) return;
+
+        this.currentKBId = kbId;
+        this.els.kbList.classList.add('hidden');
+        this.els.kbDetails.classList.remove('hidden');
+
+        // Bug 3b Fix: pre-fill name/description inputs with current values
+        const nameInput = document.getElementById('kb-name-input');
+        const descInput = document.getElementById('kb-description-input');
+        if (nameInput) nameInput.value = kb.name || '';
+        if (descInput) descInput.value = kb.description || '';
+
+        this.els.kbDetailsTitle.textContent = kb.name;
+        this.els.kbDetailsDesc.textContent = kb.description || 'No description';
+
+        // Bug 3a Fix: update individual stat spans (not parent textContent which destroys child HTML)
+        const docCount = kb.documentCount || 0;
+        const chunkCount = kb.totalChunks || 0;
+        const tokenCount = kb.totalTokens || 0;
+        const docCountEl = document.getElementById('kb-doc-count');
+        const chunkCountEl = document.getElementById('kb-chunk-count');
+        const tokenCountEl = document.getElementById('kb-token-count');
+        if (docCountEl) docCountEl.textContent = docCount;
+        if (chunkCountEl) chunkCountEl.textContent = chunkCount;
+        if (tokenCountEl) tokenCountEl.textContent = tokenCount.toLocaleString();
+
+        await this.renderKBDocuments(kbId);
+    }
+
+    async renderKBDocuments(kbId) {
+        if (!this.els.kbDocumentsList) return;
+
+        const docs = await window.ragSystem.lifecycle.getDocuments(kbId);
+
+        if (docs.length === 0) {
+            this.els.kbDocumentsList.innerHTML = '<p class="text-muted text-center p-4">No documents in this knowledge base.</p>';
+            return;
+        }
+
+        this.els.kbDocumentsList.innerHTML = docs.map(doc => `
+            <div class="kb-doc-item" data-doc-id="${doc.id}">
+                <div class="kb-doc-info">
+                    <div class="kb-doc-name" title="${this.escapeHtml(doc.filename)}">${this.escapeHtml(doc.filename)}</div>
+                    <div class="kb-doc-meta">${((doc.fileSize || 0) / 1024).toFixed(1)} KB · ${doc.chunkCount || 0} chunks · ${doc.status}</div>
+                </div>
+                <div class="kb-doc-actions">
+                    <button class="btn btn-icon kb-doc-delete-btn" data-doc-id="${doc.id}" title="Delete">${Icons.create('trash-2', { size: 14 })}</button>
+                </div>
+            </div>
+        `).join('');
+
+        // Bind delete buttons
+        this.els.kbDocumentsList.querySelectorAll('.kb-doc-delete-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                this.handleDeleteKBDocument(kbId, btn.dataset.docId);
+            };
+        });
+
+        Icons.replaceAllInDocument();
+    }
+
+    async handleAddKBDocuments(e) {
+        const files = e.target.files;
+        if (!files || files.length === 0 || !this.currentKBId) return;
+
+        // Show processing panel
+        const processingPanel = document.getElementById('kb-processing-panel');
+        const processingStatus = document.getElementById('kb-processing-status');
+        const processingBar = document.getElementById('kb-processing-bar');
+        const processingMessage = document.getElementById('kb-processing-message');
+
+        if (processingPanel) {
+            processingPanel.classList.remove('hidden');
+            processingStatus.textContent = 'Processing documents...';
+            processingBar.style.width = '0%';
+            processingMessage.textContent = '';
+        }
+
+        try {
+            let processedCount = 0;
+            for (const file of files) {
+                await window.ragSystem.lifecycle.addFile(this.currentKBId, file, (progressData) => {
+                    // Bug 1 Fix: progressData.progress is already 0-100, no need to multiply by 100
+                    const progressPercent = Math.round(progressData.progress || 0);
+                    const fileProgress = Math.round((processedCount / files.length) * 100);
+                    const totalProgress = fileProgress + Math.round((progressPercent / files.length));
+
+                    // Update UI
+                    if (processingStatus) processingStatus.textContent = `Processing ${file.name}...`;
+                    if (processingBar) processingBar.style.width = `${totalProgress}%`;
+                    if (processingMessage) processingMessage.textContent = progressData.message || `${progressData.status} (${progressPercent}%)`;
+
+                    console.log(`Processing ${file.name}: ${progressData.status} - ${progressPercent}%`);
+                });
+                processedCount++;
+            }
+
+            // Final update
+            if (processingBar) processingBar.style.width = '100%';
+            if (processingStatus) processingStatus.textContent = 'Complete!';
+            if (processingMessage) processingMessage.textContent = 'All documents processed successfully';
+
+            this.showToast('Documents added successfully', 'success');
+            await this.loadKBDetails(this.currentKBId);
+            await this.updateKBSelector();
+
+            // Hide panel after short delay
+            setTimeout(() => {
+                if (processingPanel) processingPanel.classList.add('hidden');
+            }, 1500);
+        } catch (err) {
+            console.error('Error adding documents:', err);
+            if (processingStatus) processingStatus.textContent = 'Error';
+            if (processingMessage) processingMessage.textContent = err.message;
+            alert('Error adding documents: ' + err.message);
+        } finally {
+            e.target.value = '';
+        }
+    }
+
+    async handleDeleteKBDocument(kbId, docId) {
+        if (!confirm('Are you sure you want to delete this document?')) return;
+
+        try {
+            await window.ragSystem.lifecycle.removeFile(kbId, docId);
+            this.showToast('Document deleted', 'success');
+            await this.loadKBDetails(kbId);
+            await this.updateKBSelector();
+        } catch (e) {
+            alert('Error deleting document: ' + e.message);
+        }
+    }
+
+    async handleDeleteCurrentKB() {
+        if (!this.currentKBId) return;
+        if (!confirm('Are you sure you want to delete this Knowledge Base and all its documents? This cannot be undone.')) return;
+
+        try {
+            await window.ragSystem.kbManager.deleteKnowledgeBase(this.currentKBId);
+            this.showToast('Knowledge Base deleted', 'success');
+            this.currentKBId = null;
+            await this.openKnowledgeBase();
+            await this.updateKBSelector();
+        } catch (e) {
+            alert('Error deleting Knowledge Base: ' + e.message);
+        }
+    }
+
+    async handleSaveKB() {
+        if (!this.currentKBId) return;
+
+        const nameInput = document.getElementById('kb-name-input');
+        const descInput = document.getElementById('kb-description-input');
+
+        const name = nameInput?.value.trim();
+        const description = descInput?.value.trim() || '';
+
+        if (!name) {
+            this.showToast('Please enter a name for the Knowledge Base', 'warning');
+            return;
+        }
+
+        try {
+            const kb = await window.ragSystem.kbManager.getKnowledgeBase(this.currentKBId);
+            if (!kb) {
+                this.showToast('Knowledge Base not found', 'error');
+                return;
+            }
+            kb.name = name;
+            kb.description = description;
+            await window.ragSystem.kbManager.updateKnowledgeBase(kb);
+            this.showToast('Knowledge Base saved', 'success');
+            await this.updateKBSelector();
+        } catch (e) {
+            alert('Error saving Knowledge Base: ' + e.message);
+        }
+    }
+
+    async updateKBSelector() {
+        if (!this.els.kbSelectorDropdown) return;
+
+        // Ensure kbManager is initialized before trying to use it
+        if (!window.ragSystem || !window.ragSystem.kbManager) {
+            console.warn('[App] Cannot update KB selector: RAG system or KB Manager not initialized.');
+            return;
+        }
+
+        const kbs = await window.ragSystem.kbManager.getAllKnowledgeBases();
+        const activeKBId = window.ragSystem.kbManager.activeKBId;
+        const kbSelectorList = document.getElementById('kb-selector-list');
+
+        // Build the dropdown content
+        let dropdownHtml;
+        if (kbs.length === 0) {
+            dropdownHtml = `
+                <div class="kb-selector-header">
+                    <span>Knowledge Bases</span>
+                </div>
+                <div class="kb-selector-list">
+                    <div class="kb-selector-empty">No knowledge bases found</div>
+                </div>
+                <div class="kb-selector-footer">
+                    <button class="btn btn-sm btn-ghost" id="manage-kb-btn-dropdown">Manage KBs</button>
+                </div>
+            `;
+        } else {
+            dropdownHtml = `
+                <div class="kb-selector-header">
+                    <span>Knowledge Bases</span>
+                </div>
+                <div class="kb-selector-list">
+                    <div class="kb-selector-item ${!activeKBId ? 'active' : ''}" data-kb-id="">
+                        <span>None (Standard Chat)</span>
+                        ${!activeKBId ? Icons.create('check', { size: 14 }) : ''}
+                    </div>
+                    ${kbs.map(kb => `
+                        <div class="kb-selector-item ${activeKBId === kb.id ? 'active' : ''}" data-kb-id="${kb.id}">
+                            <div class="kb-selector-item-info">
+                                <div class="kb-selector-item-name">${this.escapeHtml(kb.name)}</div>
+                                <div class="kb-selector-item-meta">${kb.documentCount || 0} docs · ${kb.totalChunks || 0} chunks</div>
+                            </div>
+                            ${activeKBId === kb.id ? Icons.create('check', { size: 14 }) : ''}
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="kb-selector-footer">
+                    <button class="btn btn-sm btn-ghost" id="manage-kb-btn-dropdown">Manage KBs</button>
+                </div>
+            `;
+        }
+
+        this.els.kbSelectorDropdown.innerHTML = dropdownHtml;
+
+        // Bind clicks
+        this.els.kbSelectorDropdown.querySelectorAll('.kb-selector-item[data-kb-id]').forEach(item => {
+            item.onclick = async () => {
+                const kbId = item.dataset.kbId;
+                await this.handleSelectKB(kbId);
+                this.els.kbSelectorDropdown.classList.add('hidden');
+            };
+        });
+
+        const manageBtn = document.getElementById('manage-kb-btn-dropdown');
+        if (manageBtn) {
+            manageBtn.onclick = () => {
+                this.els.kbSelectorDropdown.classList.add('hidden');
+                this.openKnowledgeBase();
+            };
+        }
+
+        // Update active state (footer dropdown)
+        const activeKB = kbs.find(kb => kb.id === activeKBId);
+
+        // Add active class to footer button when KB is selected
+        if (this.els.kbSelectorToggle) {
+            this.els.kbSelectorToggle.classList.toggle('active', !!activeKBId);
+        }
+
+        // Bug 7 Fix: update kb-active-count badge and Bug 8: update menu kb-toggle-btn state
+        const kbActiveCount = document.getElementById('kb-active-count');
+        if (kbActiveCount) {
+            if (activeKBId) {
+                kbActiveCount.textContent = '1';
+                kbActiveCount.classList.remove('hidden');
+            } else {
+                kbActiveCount.classList.add('hidden');
+            }
+        }
+        if (this.els.kbToggleBtn) {
+            this.els.kbToggleBtn.classList.toggle('active', !!activeKBId);
+        }
+
+        Icons.replaceAllInDocument();
+    }
+
+    async handleSelectKB(kbId) {
+        try {
+            if (kbId) {
+                await window.ragSystem.kbManager.activateKB(kbId);
+                this.showToast(`Knowledge Base activated`, 'success');
+            } else {
+                await window.ragSystem.kbManager.deactivateKB();
+                this.showToast(`Knowledge Base deactivated`, 'info');
+            }
+            // Bug 6 Fix: persist activeKBId so it survives extension reload
+            await Storage.updateSettings({ activeKBId: kbId || null });
+        } catch (err) {
+            console.error('Error selecting Knowledge Base:', err);
+            this.showToast(`Error activating Knowledge Base: ${err.message}`, 'error');
+            // Revert state if activation fails
+            await window.ragSystem.kbManager.deactivateKB();
+            await Storage.updateSettings({ activeKBId: null });
+        } finally {
+            await this.updateKBSelector();
+        }
+    }
+
+    toggleKBSelector() {
+        if (this.els.kbSelectorContainer) {
+            this.els.kbSelectorContainer.classList.toggle('hidden');
+            if (!this.els.kbSelectorContainer.classList.contains('hidden')) {
+                this.updateKBSelector();
+            }
+        }
     }
 
     async loadHistory(query = '') {
@@ -3554,9 +4154,9 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                 <span style="font-size:1.2em; min-width:24px; text-align:center;">${cat.emoji}</span>
                 <span style="flex:1; margin-left:8px; font-weight:500;">${cat.label}</span>
                 ${cat.isBuiltin
-                    ? `<span style="font-size:0.72em; color:var(--text-muted); padding:1px 6px; background:var(--bg-tertiary); border-radius:4px;">built-in</span>`
-                    : `<button class="btn btn-icon delete-cat-btn" data-cat-id="${cat.id}" title="Delete" aria-label="Delete category" style="width:24px;height:24px;">${Icons.create('trash-2', { size: 14 })}</button>`
-                }
+                ? `<span style="font-size:0.72em; color:var(--text-muted); padding:1px 6px; background:var(--bg-tertiary); border-radius:4px;">built-in</span>`
+                : `<button class="btn btn-icon delete-cat-btn" data-cat-id="${cat.id}" title="Delete" aria-label="Delete category" style="width:24px;height:24px;">${Icons.create('trash-2', { size: 14 })}</button>`
+            }
             </div>
         `).join('') || '<p style="color:var(--text-muted);font-size:0.9em;padding:8px 0;">No categories yet.</p>';
 
@@ -3717,7 +4317,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         if (this.els.promptEditorModal) {
             this.els.promptEditorModal.classList.add('hidden');
         }
-        
+
         this.promptEditorState = { type: null, mode: null, existingPrompt: null };
     }
 
@@ -3754,7 +4354,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         try {
             if (type === 'user') {
                 const prompts = await Storage.getPrompts();
-                
+
                 if (mode === 'create') {
                     prompts.push({
                         id: crypto.randomUUID(),
@@ -3771,12 +4371,12 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                         prompts[index].category = category || existingPrompt.category || 'custom';
                     }
                 }
-                
+
                 await Storage.savePrompts(prompts);
                 await this.loadUserPrompts();
             } else if (type === 'system') {
                 const all = await Storage.getSystemPrompts();
-                
+
                 if (mode === 'create') {
                     all.push({
                         id: crypto.randomUUID(),
@@ -3792,7 +4392,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                         all[index].content = content;
                     }
                 }
-                
+
                 await Storage.saveSystemPrompts(all);
                 this.renderSystemPromptChips(all);
                 this.renderSystemPromptsList(all);
@@ -3839,7 +4439,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         };
         this.currentYouTubeVideoId = null;
         this.els.chatContainer.innerHTML = '';
-        
+
         // Clear attached files for new conversation
         this.attachedPdfs = [];
         this.renderAttachedPdfs();
@@ -4177,24 +4777,24 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
 
     async handleSendMessage() {
         let content = this.els.messageInput.value.trim();
-        
+
         // Guard: Prevent multiple parallel analyses
         if (this.isProcessing) {
             console.log('[DEBUG handleSendMessage] BLOCKED - isProcessing:', this.isProcessing);
             return;
         }
-        
+
         if (!content || this.isStreaming) {
             console.log('[DEBUG handleSendMessage] BLOCKED - content:', !!content, 'isStreaming:', this.isStreaming);
             return;
         }
-        
+
         // IMMEDIATELY disable button to prevent race condition
         // This must happen BEFORE any async operations
         this.els.sendBtn.disabled = true;
         this.els.sendBtn.setAttribute('aria-disabled', 'true');
         this.els.sendBtn.classList.add('processing');
-        
+
         // Set guard flag
         this.isProcessing = true;
 
@@ -4202,14 +4802,14 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         if (this.attachedImages.length > 0) {
             const visionModels = this.models.visionModels || [];
             const visionModelIds = visionModels.map(m => m.id);
-            
+
             if (!visionModelIds.includes(this.currentModel)) {
                 // Re-enable button first
                 this.els.sendBtn.disabled = false;
                 this.els.sendBtn.setAttribute('aria-disabled', 'false');
                 this.els.sendBtn.classList.remove('processing');
                 this.isProcessing = false;
-                
+
                 // Show error message - sanitize model names to prevent XSS
                 const escapeHtml = (str) => {
                     const div = document.createElement('div');
@@ -4255,6 +4855,34 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
             const multiTabContextStr = this.multiTabContext.getContextString();
             if (multiTabContextStr) {
                 content += multiTabContextStr;
+            }
+        }
+
+        // Knowledge Base Context Retrieval
+        if (window.ragSystem && window.ragSystem.kbManager.activeKBId) {
+            try {
+                const kbId = window.ragSystem.kbManager.activeKBId;
+                const kb = await window.ragSystem.kbManager.getKnowledgeBase(kbId);
+
+                if (kb) {
+                    this.showToast(`Searching Knowledge Base: ${kb.name}...`, 'info', 1500);
+
+                    const contextData = await window.ragSystem.query(content, {
+                        kbIds: [kbId],
+                        topK: 5,
+                        similarityThreshold: 0.6
+                    });
+
+                    if (contextData && contextData.context && contextData.context.trim()) {
+                        content += `\n\n${contextData.context}`;
+                        this.showToast(`Retrieved context from ${kb.name}`, 'success', 1500);
+                    } else {
+                        this.showToast(`No relevant context found in ${kb.name}`, 'info', 1500);
+                    }
+                }
+            } catch (err) {
+                console.error('Error retrieving KB context:', err);
+                this.showToast('Error retrieving Knowledge Base context', 'error');
             }
         }
 
@@ -4369,7 +4997,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
             console.log('[DEBUG generateResponse] BLOCKED - already streaming');
             return;
         }
-        
+
         this.isStreaming = true;
         this.els.sendBtn.classList.add('hidden');
         this.els.stopBtn.classList.remove('hidden');
@@ -4444,7 +5072,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         const stopThinkingTimer = () => {
             // Mark thinking as complete to prevent race condition with pending requestAnimationFrame
             thinkingComplete = true;
-            
+
             if (thinkingTimerInterval) {
                 clearInterval(thinkingTimerInterval);
                 thinkingTimerInterval = null;
@@ -4587,7 +5215,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
 
                     this.isStreaming = false;
                     this.announceToScreenReader('Response received');
-                    
+
                     // Re-enable button and reset states
                     this.els.sendBtn.disabled = false;
                     this.els.sendBtn.removeAttribute('aria-disabled');
@@ -4728,7 +5356,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
 
                     this.els.sendBtn.classList.remove('hidden');
                     this.els.stopBtn.classList.add('hidden');
-                    
+
                     // Re-enable button and reset processing state
                     this.els.sendBtn.disabled = false;
                     this.els.sendBtn.removeAttribute('aria-disabled');
@@ -4739,7 +5367,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         } catch (e) {
             stopThinkingTimer();
             this.isStreaming = false;
-            
+
             // Re-enable button and reset processing state on error
             this.els.sendBtn.disabled = false;
             this.els.sendBtn.removeAttribute('aria-disabled');
@@ -4759,7 +5387,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         this.isStreaming = false;
         this.els.sendBtn.classList.remove('hidden');
         this.els.stopBtn.classList.add('hidden');
-        
+
         // Re-enable button and reset processing state
         this.els.sendBtn.disabled = false;
         this.els.sendBtn.removeAttribute('aria-disabled');
@@ -5351,7 +5979,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
 
         // Configure modal for message editing
         this.els.promptEditorTitle.textContent = 'Edit Message';
-        
+
         // Hide name and category fields (not needed for messages)
         if (this.els.promptEditorName) {
             this.els.promptEditorName.parentElement.style.display = 'none';
@@ -6153,20 +6781,20 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         return new Promise((resolve) => {
             const img = new Image();
             const reader = new FileReader();
-            
+
             reader.onload = (e) => {
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
-                    
+
                     // Maximum dimension - balance between quality and size
                     const MAX_SIZE = 2048;
                     // JPEG quality for compression (0.7 = good balance)
                     const QUALITY = 0.7;
-                    
+
                     let width = img.width;
                     let height = img.height;
-                    
+
                     // Calculate new dimensions while maintaining aspect ratio
                     if (width > height && width > MAX_SIZE) {
                         height = Math.round(height * (MAX_SIZE / width));
@@ -6175,23 +6803,23 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                         width = Math.round(width * (MAX_SIZE / height));
                         height = MAX_SIZE;
                     }
-                    
+
                     // If image is already smaller than MAX_SIZE, don't upscale
                     if (img.width <= MAX_SIZE && img.height <= MAX_SIZE) {
                         width = img.width;
                         height = img.height;
                     }
-                    
+
                     canvas.width = width;
                     canvas.height = height;
-                    
+
                     // Draw image to canvas (this also handles format conversion)
                     ctx.drawImage(img, 0, 0, width, height);
-                    
+
                     // Convert to JPEG for smaller size
                     const compressedDataUrl = canvas.toDataURL('image/jpeg', QUALITY);
                     const base64 = compressedDataUrl.split(',')[1];
-                    
+
                     resolve({
                         base64,
                         mimeType: 'image/jpeg',
@@ -6210,13 +6838,13 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
             console.warn('Skipping non-image file:', file.type);
             return;
         }
-        
+
         // Show processing indicator for large images
         const isLargeFile = file.size > 1024 * 1024; // > 1MB
         if (isLargeFile) {
             console.log('Compressing large image:', (file.size / 1024 / 1024).toFixed(2) + 'MB');
         }
-        
+
         // Use compressed version for API, preview can stay as-is
         const compressed = await this.compressImage(file);
         this.attachedImages.push(compressed);
@@ -6279,7 +6907,7 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
 
         try {
             this.els.attachedPdf.classList.remove('hidden');
-            
+
             // Show processing state (append so multiple PDFs show during processing)
             const processingHtml = '<div class="pdf-preview processing">📄 Processing ' + escapeHtml(file.name) + '...</div>';
             this.els.attachedPdf.innerHTML += processingHtml;

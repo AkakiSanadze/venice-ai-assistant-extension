@@ -182,6 +182,14 @@ const Icons = {
     layers: {
       viewBox: '0 0 24 24',
       path: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>'
+    },
+    'book-open': {
+      viewBox: '0 0 24 24',
+      path: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'
+    },
+    'check-circle': {
+      viewBox: '0 0 24 24',
+      path: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>'
     }
   },
 
