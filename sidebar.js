@@ -655,7 +655,7 @@ class App {
         this.lastGeneratedVoice = '';
         this.isTTSGenerating = false;
         this.attachedImages = [];
-        this.attachedPdfContent = null;
+        this.attachedPdfs = [];
         this.pinnedConversations = [];
         this.folders = [];
         this.currentFolderFilter = '';
@@ -3839,6 +3839,10 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         };
         this.currentYouTubeVideoId = null;
         this.els.chatContainer.innerHTML = '';
+        
+        // Clear attached files for new conversation
+        this.attachedPdfs = [];
+        this.renderAttachedPdfs();
 
         // Show empty state
         this.updateEmptyState();
@@ -4194,6 +4198,32 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         // Set guard flag
         this.isProcessing = true;
 
+        // VISION MODEL VALIDATION: Check if images are attached but model doesn't support vision
+        if (this.attachedImages.length > 0) {
+            const visionModels = this.models.visionModels || [];
+            const visionModelIds = visionModels.map(m => m.id);
+            
+            if (!visionModelIds.includes(this.currentModel)) {
+                // Re-enable button first
+                this.els.sendBtn.disabled = false;
+                this.els.sendBtn.setAttribute('aria-disabled', 'false');
+                this.els.sendBtn.classList.remove('processing');
+                this.isProcessing = false;
+                
+                // Show error message - sanitize model names to prevent XSS
+                const escapeHtml = (str) => {
+                    const div = document.createElement('div');
+                    div.textContent = str;
+                    return div.innerHTML;
+                };
+                const visionModelNames = visionModels
+                    .map(m => escapeHtml(m.model_spec?.name || m.id))
+                    .join(', ');
+                this.showToast(`This model doesn't support image analysis. Please select a Vision model.`, 'error');
+                return;
+            }
+        }
+
         // Check if chain mode is enabled and execute chain instead
         if (this.chainModeEnabled && this.activeChainTemplate) {
             // Execute chain instead of single message
@@ -4212,11 +4242,12 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         }
 
         // Append PDF content if attached
-        if (this.attachedPdfContent) {
-            content += `\n\n[PDF Content for Analysis]:\n${this.attachedPdfContent.substring(0, 15000)}`;
-            this.attachedPdfContent = null;
-            this.els.attachedPdf.classList.add('hidden');
-            this.els.attachedPdf.innerHTML = '';
+        if (this.attachedPdfs.length > 0) {
+            this.attachedPdfs.forEach((pdf, index) => {
+                content += `\n\n[PDF ${index + 1}: ${pdf.name}]:\n${pdf.content}`;
+            });
+            this.attachedPdfs = [];
+            this.renderAttachedPdfs();
         }
 
         // Append multi-tab context if selected
@@ -6113,21 +6144,83 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         }
     }
 
-    async addImageFile(file) {
+    /**
+     * Compress/resize image before uploading
+     * @param {File} file - Original image file
+     * @returns {Promise<{base64: string, mimeType: string, preview: string}>}
+     */
+    async compressImage(file) {
         return new Promise((resolve) => {
+            const img = new Image();
             const reader = new FileReader();
+            
             reader.onload = (e) => {
-                const base64 = e.target.result.split(',')[1];
-                this.attachedImages.push({
-                    base64,
-                    mimeType: file.type,
-                    preview: e.target.result
-                });
-                this.renderAttachedImages();
-                resolve();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Maximum dimension - balance between quality and size
+                    const MAX_SIZE = 2048;
+                    // JPEG quality for compression (0.7 = good balance)
+                    const QUALITY = 0.7;
+                    
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    // Calculate new dimensions while maintaining aspect ratio
+                    if (width > height && width > MAX_SIZE) {
+                        height = Math.round(height * (MAX_SIZE / width));
+                        width = MAX_SIZE;
+                    } else if (height > MAX_SIZE) {
+                        width = Math.round(width * (MAX_SIZE / height));
+                        height = MAX_SIZE;
+                    }
+                    
+                    // If image is already smaller than MAX_SIZE, don't upscale
+                    if (img.width <= MAX_SIZE && img.height <= MAX_SIZE) {
+                        width = img.width;
+                        height = img.height;
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    
+                    // Draw image to canvas (this also handles format conversion)
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Convert to JPEG for smaller size
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', QUALITY);
+                    const base64 = compressedDataUrl.split(',')[1];
+                    
+                    resolve({
+                        base64,
+                        mimeType: 'image/jpeg',
+                        preview: compressedDataUrl
+                    });
+                };
+                img.src = e.target.result;
             };
             reader.readAsDataURL(file);
         });
+    }
+
+    async addImageFile(file) {
+        // Check if this is an image file
+        if (!file.type.startsWith('image/')) {
+            console.warn('Skipping non-image file:', file.type);
+            return;
+        }
+        
+        // Show processing indicator for large images
+        const isLargeFile = file.size > 1024 * 1024; // > 1MB
+        if (isLargeFile) {
+            console.log('Compressing large image:', (file.size / 1024 / 1024).toFixed(2) + 'MB');
+        }
+        
+        // Use compressed version for API, preview can stay as-is
+        const compressed = await this.compressImage(file);
+        this.attachedImages.push(compressed);
+        this.renderAttachedImages();
     }
 
     renderAttachedImages() {
@@ -6165,36 +6258,93 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
 
     // === PDF HANDLING ===
     async handlePdfUpload(e) {
-        const file = e.target.files[0];
-        if (!file || !file.name.endsWith('.pdf')) return;
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        for (const file of files) {
+            if (file.type !== 'application/pdf') continue;
+            await this.addPdfFile(file);
+        }
+
+        e.target.value = ''; // Reset input
+    }
+
+    async addPdfFile(file) {
+        // Helper to escape HTML entities
+        const escapeHtml = (str) => {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        };
 
         try {
             this.els.attachedPdf.classList.remove('hidden');
-            this.els.attachedPdf.innerHTML = '📄 Processing PDF...';
+            
+            // Show processing state (append so multiple PDFs show during processing)
+            const processingHtml = '<div class="pdf-preview processing">📄 Processing ' + escapeHtml(file.name) + '...</div>';
+            this.els.attachedPdf.innerHTML += processingHtml;
 
             const arrayBuffer = await file.arrayBuffer();
             const result = await PDFParser.extractText(arrayBuffer);
 
-            this.attachedPdfContent = result.pages.map(p => p.text).join('\n\n');
-
-            this.els.attachedPdf.innerHTML = `
-                <div class="pdf-preview">
-                    <span>📄 ${file.name} (${result.totalPages} pages)</span>
-                    <button class="remove-pdf-btn" title="Remove">×</button>
-                </div>
-            `;
-
-            this.els.attachedPdf.querySelector('.remove-pdf-btn').onclick = () => {
-                this.attachedPdfContent = null;
-                this.els.attachedPdf.classList.add('hidden');
-                this.els.attachedPdf.innerHTML = '';
+            const pdfContent = {
+                name: file.name,
+                content: result.pages.map(p => p.text).join('\n\n'),
+                totalPages: result.totalPages,
+                size: file.size,
+                date: new Date()
             };
+
+            this.attachedPdfs.push(pdfContent);
+            this.renderAttachedPdfs();
+            this.updateContextUsage();
         } catch (err) {
             console.error('PDF parsing error:', err);
-            this.els.attachedPdf.innerHTML = `<span style="color:red">Failed to process PDF</span>`;
+            this.showToast('Failed to process PDF: ' + file.name, 'error');
+        }
+    }
+
+    renderAttachedPdfs() {
+        if (this.attachedPdfs.length === 0) {
+            this.els.attachedPdf.classList.add('hidden');
+            this.els.attachedPdf.innerHTML = '';
+            return;
         }
 
-        e.target.value = '';
+        // Helper to escape HTML entities for safe innerHTML insertion
+        const escapeHtml = (str) => {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        };
+
+        this.els.attachedPdf.classList.remove('hidden');
+        this.els.attachedPdf.innerHTML = this.attachedPdfs.map((pdf, i) => `
+            <div class="attached-pdf-preview" data-index="${i}">
+                <span class="pdf-icon">📄</span>
+                <span class="pdf-name" title="${escapeHtml(pdf.name)}">${escapeHtml(pdf.name)}</span>
+                <span class="pdf-pages">(${pdf.totalPages} pages)</span>
+                <button class="remove-pdf-btn" data-index="${i}" title="Remove">×</button>
+            </div>
+        `).join('');
+
+        // Bind remove buttons
+        this.els.attachedPdf.querySelectorAll('.remove-pdf-btn').forEach(btn => {
+            btn.onclick = async () => {
+                const index = parseInt(btn.dataset.index);
+                const preview = btn.closest('.attached-pdf-preview');
+
+                // Animate exit
+                if (preview) {
+                    preview.classList.add('exiting');
+                    await new Promise(resolve => setTimeout(resolve, 150));
+                }
+
+                this.attachedPdfs.splice(index, 1);
+                this.renderAttachedPdfs();
+                this.updateContextUsage();
+            };
+        });
     }
 }
 
