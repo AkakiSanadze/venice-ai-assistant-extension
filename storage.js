@@ -694,7 +694,64 @@ const Storage = {
   },
 
   async set(key, value) {
-    await chrome.storage.local.set({ [key]: value });
+    try {
+      await chrome.storage.local.set({ [key]: value });
+    } catch (error) {
+      // Handle quota exceeded error
+      if (error.message && error.message.includes('QUOTA_BYTES')) {
+        console.error('Storage quota exceeded:', error.message);
+        // Try to clear old conversations to free up space
+        await this.handleQuotaExceeded(key);
+        // Retry once after cleanup
+        try {
+          await chrome.storage.local.set({ [key]: value });
+        } catch (retryError) {
+          console.error('Storage retry failed:', retryError);
+          throw new Error('Storage quota exceeded. Please clear some conversations or data.');
+        }
+      } else {
+        throw error;
+      }
+    }
+  },
+
+  /**
+   * Handle storage quota exceeded by cleaning up old data
+   * @param {string} key - The key that failed to save
+   */
+  async handleQuotaExceeded(key) {
+    console.warn('Attempting to free up storage space...');
+    
+    // If it's the conversations key, try to trim old conversations
+    if (key === 'conversations') {
+      try {
+        const conversations = await this.get('conversations') || {};
+        const convArray = Object.values(conversations);
+        
+        if (convArray.length > 10) {
+          // Sort by updatedAt and keep only the 10 most recent
+          convArray.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+          const trimmed = {};
+          convArray.slice(0, 10).forEach(c => {
+            trimmed[c.id] = c;
+          });
+          
+          console.log(`Trimmed conversations from ${convArray.length} to 10`);
+          await chrome.storage.local.set({ conversations: trimmed });
+          return;
+        }
+      } catch (e) {
+        console.error('Failed to trim conversations:', e);
+      }
+    }
+    
+    // Try to clear chain executions (can be large)
+    try {
+      await chrome.storage.local.remove('chain_executions');
+      console.log('Cleared chain executions to free space');
+    } catch (e) {
+      console.error('Failed to clear chain executions:', e);
+    }
   },
 
   // --- API KEY ---

@@ -707,7 +707,12 @@ class App {
 
             // Initialize RAG System
             if (window.ragSystem) {
-                await window.ragSystem.init(this.api);
+                try {
+                    await window.ragSystem.init(this.api);
+                } catch (ragError) {
+                    console.warn('RAG System initialization failed:', ragError.message);
+                    // RAG features will be unavailable but app can still work
+                }
             }
 
             await this.showMainApp();
@@ -875,6 +880,9 @@ class App {
             menuKbBtn: document.getElementById('menu-kb-btn'),
             kbView: document.getElementById('kb-view'),
             createKbBtn: document.getElementById('create-kb-btn'),
+            importKbBtn: document.getElementById('import-kb-btn'),
+            exportKbBtn: document.getElementById('export-kb-btn'),
+            kbImportFileInput: document.getElementById('kb-import-file-input'),
             kbToggleBtn: document.getElementById('kb-toggle-btn'),
             kbSelectorContainer: document.getElementById('kb-selector-container'),
             kbSelectorToggle: document.getElementById('kb-selector-toggle'),
@@ -1421,6 +1429,21 @@ class App {
 
         if (this.els.createKbBtn) {
             this.els.createKbBtn.onclick = () => this.handleCreateKB();
+        }
+
+        if (this.els.importKbBtn) {
+            this.els.importKbBtn.onclick = () => this.handleImportKB();
+        }
+
+        if (this.els.exportKbBtn) {
+            this.els.exportKbBtn.onclick = () => this.handleExportKB();
+        }
+
+        if (this.els.kbImportFileInput) {
+            this.els.kbImportFileInput.onchange = async (e) => {
+                await this.handleKBFileImport(e);
+                e.target.value = '';
+            };
         }
 
         if (this.els.kbToggleBtn) {
@@ -3570,6 +3593,85 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
             await this.updateKBSelector();
         } catch (e) {
             alert('Error saving Knowledge Base: ' + e.message);
+        }
+    }
+
+    /**
+     * Handle importing a Knowledge Base - trigger file input click
+     */
+    handleImportKB() {
+        if (this.els.kbImportFileInput) {
+            this.els.kbImportFileInput.click();
+        }
+    }
+
+    /**
+     * Handle KB file import from file input
+     * @param {Event} e - The change event from file input
+     */
+    async handleKBFileImport(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+            // Ask user if they want to rename the KB
+            const newName = prompt(
+                'Importing Knowledge Base: "' + file.name.replace('.json', '') + '"\n\n' +
+                'Enter a name for the imported Knowledge Base (or leave empty to use original name):',
+                ''
+            );
+
+            if (newName === null) {
+                // User cancelled
+                return;
+            }
+
+            this.showToast('Importing Knowledge Base...', 'info');
+
+            const kb = await window.ragSystem.kbManager.importKBFromFile(
+                file,
+                newName.trim() || undefined
+            );
+
+            this.showToast(`Knowledge Base "${kb.name}" imported successfully!`, 'success');
+
+            // Refresh the KB list
+            await this.renderKBList();
+            await this.updateKBSelector();
+        } catch (err) {
+            console.error('Error importing KB:', err);
+            this.showToast('Import error: ' + err.message, 'error');
+        }
+    }
+
+    /**
+     * Handle exporting the current Knowledge Base
+     */
+    async handleExportKB() {
+        if (!this.currentKBId) {
+            this.showToast('No Knowledge Base selected', 'warning');
+            return;
+        }
+
+        try {
+            this.showToast('Preparing export...', 'info');
+
+            const { filename, blob } = await window.ragSystem.kbManager.exportKBToFile(this.currentKBId);
+
+            // Create download link
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            this.showToast('Knowledge Base exported successfully!', 'success');
+        } catch (err) {
+            console.error('Error exporting KB:', err);
+            this.showToast('Export error: ' + err.message, 'error');
         }
     }
 

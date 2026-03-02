@@ -490,6 +490,10 @@
             <span data-icon="plus" aria-hidden="true"></span>
             <span>New Knowledge Base</span>
           </button>
+          <button id="import-kb-btn" class="btn btn-secondary" aria-label="Import knowledge base">
+            <span data-icon="upload" aria-hidden="true"></span>
+            <span>Import</span>
+          </button>
         </div>
         
         <!-- KB List -->
@@ -500,6 +504,9 @@
             <p class="text-sm" style="color:var(--text-muted);">Create a knowledge base to upload documents and chat with them</p>
           </div>
         </div>
+
+        <!-- KB Import (hidden file input) -->
+        <input type="file" id="kb-import-file-input" accept=".json" hidden aria-label="Import knowledge base">
 
         <!-- KB Detail Panel (hidden by default) -->
         <div id="kb-details" class="kb-details hidden">
@@ -547,6 +554,10 @@
           </div>
 
           <div class="kb-actions">
+            <button id="export-kb-btn" class="btn btn-secondary" aria-label="Export knowledge base">
+              <span data-icon="download" aria-hidden="true"></span>
+              <span>Export KB</span>
+            </button>
             <button id="delete-kb-btn" class="btn btn-danger" aria-label="Delete knowledge base">
               <span data-icon="trash-2" aria-hidden="true"></span>
               <span>Delete Knowledge Base</span>

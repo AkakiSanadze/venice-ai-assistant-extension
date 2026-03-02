@@ -16,269 +16,140 @@ class RAGDatabase {
         this.db = null;
         this.dbName = RAG_DATABASE_NAME;
         this.version = RAG_DATABASE_VERSION;
-        this.memoryFallback = null;
-        this.useMemoryFallback = false;
     }
 
     async init() {
-        try {
-            this.db = await this.openDatabase();
-            console.log('[RAGDatabase] IndexedDB initialized successfully');
-            return this.db;
-        } catch (error) {
-            console.warn('[RAGDatabase] IndexedDB failed, using memory fallback:', error.message);
-            this.useMemoryFallback = true;
-            this.memoryFallback = new MemoryStore();
-            return this.memoryFallback;
-        }
-    }
-
-    openDatabase() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, this.version);
 
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => {
+                console.error('RAG Database open error:', request.error);
+                reject(request.error);
+            };
+
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve(this.db);
+            };
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-
-                // Knowledge Bases store
+                
+                // Knowledge bases store
                 if (!db.objectStoreNames.contains('knowledgeBases')) {
                     const kbStore = db.createObjectStore('knowledgeBases', { keyPath: 'id' });
                     kbStore.createIndex('name', 'name', { unique: false });
+                    kbStore.createIndex('createdAt', 'createdAt', { unique: false });
+                    kbStore.createIndex('updatedAt', 'updatedAt', { unique: false });
                 }
 
                 // Documents store
                 if (!db.objectStoreNames.contains('documents')) {
                     const docStore = db.createObjectStore('documents', { keyPath: 'id' });
                     docStore.createIndex('kbId', 'kbId', { unique: false });
+                    docStore.createIndex('filename', 'filename', { unique: false });
+                    docStore.createIndex('uploadedAt', 'uploadedAt', { unique: false });
                     docStore.createIndex('status', 'status', { unique: false });
                 }
 
-                // Chunks store
+                // Chunks store (with embedding for vector search)
                 if (!db.objectStoreNames.contains('chunks')) {
                     const chunkStore = db.createObjectStore('chunks', { keyPath: 'id' });
                     chunkStore.createIndex('kbId', 'kbId', { unique: false });
                     chunkStore.createIndex('docId', 'docId', { unique: false });
                 }
 
-                // Conversation KB associations
+                // Conversation-KB associations
                 if (!db.objectStoreNames.contains('conversationKB')) {
-                    const convStore = db.createObjectStore('conversationKB', { keyPath: 'conversationId' });
-                    convStore.createIndex('kbId', 'kbId', { unique: false });
+                    const convKBStore = db.createObjectStore('conversationKB', { keyPath: 'conversationId' });
+                    convKBStore.createIndex('kbId', 'kbId', { unique: false });
+                    convKBStore.createIndex('active', 'active', { unique: false });
                 }
 
-                console.log('[RAGDatabase] Database schema upgraded to version', this.version);
+                // Embedding cache store
+                if (!db.objectStoreNames.contains('embeddingCache')) {
+                    const cacheStore = db.createObjectStore('embeddingCache', { keyPath: 'hash' });
+                    cacheStore.createIndex('expiresAt', 'expiresAt', { unique: false });
+                }
             };
         });
     }
 
     // Generic CRUD operations
     async get(storeName, key) {
-        if (this.useMemoryFallback) {
-            return this.memoryFallback.get(storeName, key);
-        }
-
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
+            const tx = this.db.transaction(storeName, 'readonly');
+            const store = tx.objectStore(storeName);
             const request = store.get(key);
-
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
     }
 
     async getAll(storeName) {
-        if (this.useMemoryFallback) {
-            return this.memoryFallback.getAll(storeName);
-        }
-
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
+            const tx = this.db.transaction(storeName, 'readonly');
+            const store = tx.objectStore(storeName);
             const request = store.getAll();
-
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
     }
 
     async getAllFromIndex(storeName, indexName, value) {
-        if (this.useMemoryFallback) {
-            return this.memoryFallback.getAllFromIndex(storeName, indexName, value);
-        }
-
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
+            const tx = this.db.transaction(storeName, 'readonly');
+            const store = tx.objectStore(storeName);
             const index = store.index(indexName);
             const request = index.getAll(value);
-
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
     }
 
     async put(storeName, data) {
-        if (this.useMemoryFallback) {
-            return this.memoryFallback.put(storeName, data);
-        }
-
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
+            const tx = this.db.transaction(storeName, 'readwrite');
+            const store = tx.objectStore(storeName);
             const request = store.put(data);
-
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
     }
 
     async delete(storeName, key) {
-        if (this.useMemoryFallback) {
-            return this.memoryFallback.delete(storeName, key);
-        }
-
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
+            const tx = this.db.transaction(storeName, 'readwrite');
+            const store = tx.objectStore(storeName);
             const request = store.delete(key);
-
             request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error);
         });
     }
 
     async deleteAllFromIndex(storeName, indexName, value) {
-        if (this.useMemoryFallback) {
-            return this.memoryFallback.deleteAllFromIndex(storeName, indexName, value);
-        }
-
         const items = await this.getAllFromIndex(storeName, indexName, value);
+        const tx = this.db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        
         for (const item of items) {
-            await this.delete(storeName, item.id);
+            store.delete(item.id);
         }
-    }
-
-    async clear(storeName) {
-        if (this.useMemoryFallback) {
-            return this.memoryFallback.clear(storeName);
-        }
-
+        
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.clear();
-
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
         });
     }
 
-    /**
-     * Get all data from all stores for export
-     * @returns {Promise<Object>} All RAG data
-     */
-    async exportAllData() {
-        const data = {
-            knowledgeBases: await this.getAll('knowledgeBases'),
-            documents: await this.getAll('documents'),
-            chunks: await this.getAll('chunks'),
-            conversationKB: await this.getAll('conversationKB'),
-            exportedAt: Date.now(),
-            version: 1
-        };
-        return data;
-    }
-
-    /**
-     * Import all data into the database
-     * @param {Object} data - The data to import
-     * @returns {Promise<void>}
-     */
-    async importAllData(data) {
-        // Clear existing data
-        await this.clear('knowledgeBases');
-        await this.clear('documents');
-        await this.clear('chunks');
-        await this.clear('conversationKB');
-
-        // Import new data
-        if (data.knowledgeBases) {
-            for (const kb of data.knowledgeBases) {
-                await this.put('knowledgeBases', kb);
-            }
-        }
-        if (data.documents) {
-            for (const doc of data.documents) {
-                await this.put('documents', doc);
-            }
-        }
-        if (data.chunks) {
-            for (const chunk of data.chunks) {
-                await this.put('chunks', chunk);
-            }
-        }
-        if (data.conversationKB) {
-            for (const assoc of data.conversationKB) {
-                await this.put('conversationKB', assoc);
-            }
-        }
-    }
-}
-
-// ============================================
-// In-Memory Store (fallback when IndexedDB is unavailable)
-// ============================================
-
-class MemoryStore {
-    constructor() {
-        this.stores = new Map();
-    }
-
-    async get(storeName, key) {
-        const store = this.stores.get(storeName);
-        if (!store) return undefined;
-        return store.get(key);
-    }
-
-    async getAll(storeName) {
-        const store = this.stores.get(storeName);
-        if (!store) return [];
-        return Array.from(store.values());
-    }
-
-    async getAllFromIndex(storeName, indexName, value) {
-        const store = this.stores.get(storeName);
-        if (!store) return [];
-        return Array.from(store.values()).filter(item => item[indexName] === value);
-    }
-
-    async put(storeName, data) {
-        if (!this.stores.has(storeName)) {
-            this.stores.set(storeName, new Map());
-        }
-        this.stores.get(storeName).set(data.id, data);
-    }
-
-    async delete(storeName, key) {
-        const store = this.stores.get(storeName);
-        if (store) {
-            store.delete(key);
-        }
-    }
-
-    async deleteAllFromIndex(storeName, indexName, value) {
-        const items = await this.getAllFromIndex(storeName, indexName, value);
-        for (const item of items) {
-            await this.delete(storeName, item.id);
-        }
-    }
-
     async clear(storeName) {
-        this.stores.delete(storeName);
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(storeName, 'readwrite');
+            const store = tx.objectStore(storeName);
+            const request = store.clear();
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
     }
 }
 
@@ -344,28 +215,36 @@ class MemoryStore {
 class VectorStore {
     constructor(ragDb) {
         this.db = ragDb;
-        this.chunks = new Map();
-        this.kbIndex = new Map();
-        this.loadedKBs = new Set();
+        this.chunks = new Map();           // id -> chunk
+        this.kbIndex = new Map();           // kbId -> Set(chunkIds)
+        this.loadedKBs = new Set();         // Track loaded KBs
     }
 
+    /**
+     * Load all chunks for a KB into memory
+     * @param {string} kbId - Knowledge base ID
+     */
     async loadKnowledgeBase(kbId) {
         if (this.loadedKBs.has(kbId)) {
-            return;
+            return; // Already loaded
         }
 
         const chunks = await this.db.getAllFromIndex('chunks', 'kbId', kbId);
-
+        
         for (const chunk of chunks) {
             this.chunks.set(chunk.id, chunk);
         }
-
+        
         this.kbIndex.set(kbId, new Set(chunks.map(c => c.id)));
         this.loadedKBs.add(kbId);
-
+        
         console.log(`[VectorStore] Loaded ${chunks.length} chunks for KB ${kbId}`);
     }
 
+    /**
+     * Unload KB from memory
+     * @param {string} kbId - Knowledge base ID
+     */
     unloadKnowledgeBase(kbId) {
         const chunkIds = this.kbIndex.get(kbId);
         if (!chunkIds) return;
@@ -373,39 +252,58 @@ class VectorStore {
         for (const id of chunkIds) {
             this.chunks.delete(id);
         }
-
+        
         this.kbIndex.delete(kbId);
         this.loadedKBs.delete(kbId);
-
+        
         console.log(`[VectorStore] Unloaded KB ${kbId}`);
     }
 
+    /**
+     * Check if KB is loaded in memory
+     * @param {string} kbId - Knowledge base ID
+     * @returns {boolean}
+     */
     isLoaded(kbId) {
         return this.loadedKBs.has(kbId);
     }
 
+    /**
+     * Calculate cosine similarity between two vectors
+     * @param {number[]} a - First vector
+     * @param {number[]} b - Second vector
+     * @returns {number} Similarity score (-1 to 1)
+     */
     cosineSimilarity(a, b) {
         if (a.length !== b.length) return 0;
-
+        
         let dotProduct = 0;
         let normA = 0;
         let normB = 0;
-
+        
         for (let i = 0; i < a.length; i++) {
             dotProduct += a[i] * b[i];
             normA += a[i] * a[i];
             normB += b[i] * b[i];
         }
-
+        
         if (normA === 0 || normB === 0) return 0;
-
+        
         return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
+    /**
+     * Search for similar chunks
+     * @param {number[]} queryEmbedding - Query vector
+     * @param {number} topK - Number of results to return
+     * @param {string[]|null} kbIds - Optional array of KB IDs to search
+     * @returns {Promise<Array>} Array of chunks with similarity scores
+     */
     search(queryEmbedding, topK = 5, kbIds = null) {
         let candidates = [];
-
+        
         if (kbIds && kbIds.length > 0) {
+            // Search only in specified KBs
             for (const kbId of kbIds) {
                 const chunkIds = this.kbIndex.get(kbId);
                 if (chunkIds) {
@@ -416,22 +314,29 @@ class VectorStore {
                 }
             }
         } else {
+            // Search all loaded chunks
             candidates = Array.from(this.chunks.values());
         }
 
+        // Calculate similarities
         const scored = candidates.map(chunk => ({
             ...chunk,
             similarity: this.cosineSimilarity(queryEmbedding, chunk.embedding)
         }));
 
+        // Sort by similarity and return top K
         return scored
             .sort((a, b) => b.similarity - a.similarity)
             .slice(0, topK);
     }
 
+    /**
+     * Add a chunk to the store
+     * @param {Chunk} chunk - Chunk to add
+     */
     addChunk(chunk) {
         this.chunks.set(chunk.id, chunk);
-
+        
         if (!this.kbIndex.has(chunk.kbId)) {
             this.kbIndex.set(chunk.kbId, new Set());
         }
@@ -439,15 +344,25 @@ class VectorStore {
         this.loadedKBs.add(chunk.kbId);
     }
 
+    /**
+     * Remove a chunk from the store
+     * @param {string} chunkId - Chunk ID to remove
+     * @param {string} kbId - Knowledge base ID
+     */
     removeChunk(chunkId, kbId) {
         this.chunks.delete(chunkId);
-
+        
         const kbChunks = this.kbIndex.get(kbId);
         if (kbChunks) {
             kbChunks.delete(chunkId);
         }
     }
 
+    /**
+     * Get total chunk count for a KB
+     * @param {string} kbId - Knowledge base ID
+     * @returns {number}
+     */
     getChunkCount(kbId) {
         const chunkIds = this.kbIndex.get(kbId);
         return chunkIds ? chunkIds.size : 0;
@@ -463,9 +378,14 @@ class DocumentProcessor {
         this.supportedTypes = ['pdf', 'docx', 'txt', 'md'];
     }
 
+    /**
+     * Extract text from a file based on its type
+     * @param {File} file - File to extract text from
+     * @returns {Promise<string>} Extracted text
+     */
     async extractText(file) {
         const extension = file.name.split('.').pop().toLowerCase();
-
+        
         if (!this.supportedTypes.includes(extension)) {
             throw new Error(`Unsupported file type: ${extension}`);
         }
@@ -483,9 +403,15 @@ class DocumentProcessor {
         }
     }
 
+    /**
+     * Extract text from PDF
+     * @param {File} file - PDF file
+     * @returns {Promise<string>} Extracted text
+     */
     async extractPDF(file) {
         const arrayBuffer = await file.arrayBuffer();
-
+        
+        // Use existing PDFParser from pdf-parser.js
         if (typeof PDFParser !== 'undefined') {
             const result = await PDFParser.extractText(arrayBuffer);
             return result.pages.map(p => p.text).join('\n\n');
@@ -494,7 +420,13 @@ class DocumentProcessor {
         }
     }
 
+    /**
+     * Extract text from DOCX
+     * @param {File} file - DOCX file
+     * @returns {Promise<string>} Extracted text
+     */
     async extractDOCX(file) {
+        // Check if mammoth is available
         if (typeof mammoth !== 'undefined') {
             const arrayBuffer = await file.arrayBuffer();
             const result = await mammoth.extractRawText({ arrayBuffer });
@@ -504,10 +436,20 @@ class DocumentProcessor {
         }
     }
 
+    /**
+     * Get file type from filename
+     * @param {string} filename - Filename
+     * @returns {string} File type
+     */
     getFileType(filename) {
         return filename.split('.').pop().toLowerCase();
     }
 
+    /**
+     * Validate file type
+     * @param {File} file - File to validate
+     * @returns {boolean} True if supported
+     */
     isSupported(file) {
         const extension = file.name.split('.').pop().toLowerCase();
         return this.supportedTypes.includes(extension);
@@ -519,33 +461,49 @@ class DocumentProcessor {
 // ============================================
 
 class ChunkingStrategy {
+    /**
+     * Fixed size chunking with overlap
+     * @param {string} text - Text to chunk
+     * @param {number} chunkSize - Characters per chunk (default: 1000)
+     * @param {number} overlap - Overlap between chunks (default: 200)
+     * @returns {string[]} Array of text chunks
+     */
     static fixedSize(text, chunkSize = 1000, overlap = 200) {
         const chunks = [];
         let start = 0;
-
+        
         while (start < text.length) {
             const end = Math.min(start + chunkSize, text.length);
             chunks.push(text.slice(start, end));
             start = end - overlap;
-
+            
+            // Prevent infinite loop for small texts
             if (start <= 0 || start >= text.length) break;
         }
-
+        
         return chunks;
     }
 
+    /**
+     * Semantic chunking by paragraphs and sections
+     * @param {string} text - Text to chunk
+     * @param {number} maxChunkSize - Maximum chunk size (default: 1000)
+     * @returns {string[]} Array of text chunks
+     */
     static semantic(text, maxChunkSize = 1000) {
+        // First split by markdown headers
         const sections = text.split(/(?=#{1,3}\s)/);
         const chunks = [];
-
+        
         for (const section of sections) {
+            // Split each section by paragraphs
             const paragraphs = section.split(/\n\n+/);
             let currentChunk = '';
-
+            
             for (const para of paragraphs) {
                 const trimmed = para.trim();
                 if (!trimmed) continue;
-
+                
                 if (currentChunk.length + trimmed.length > maxChunkSize && currentChunk.length > 0) {
                     chunks.push(currentChunk.trim());
                     currentChunk = trimmed;
@@ -553,15 +511,22 @@ class ChunkingStrategy {
                     currentChunk += (currentChunk ? '\n\n' : '') + trimmed;
                 }
             }
-
+            
             if (currentChunk) {
                 chunks.push(currentChunk.trim());
             }
         }
-
+        
         return chunks;
     }
 
+    /**
+     * Recursive character chunking (best for code)
+     * @param {string} text - Text to chunk
+     * @param {string[]} separators - Separator优先级
+     * @param {number} chunkSize - Target chunk size
+     * @returns {string[]} Array of text chunks
+     */
     static recursive(text, separators = ['\n\n', '\n', '. ', ' '], chunkSize = 1000) {
         if (!text || text.length <= chunkSize) {
             return text ? [text] : [];
@@ -572,12 +537,13 @@ class ChunkingStrategy {
 
         while (start < text.length) {
             let bestSplit = -1;
-
+            
+            // Find the best separator within the chunk size
             for (const sep of separators) {
                 const searchStart = Math.max(0, start + chunkSize - 200);
                 const searchEnd = Math.min(start + chunkSize, text.length);
                 const searchText = text.slice(searchStart, searchEnd);
-
+                
                 const sepIndex = searchText.lastIndexOf(sep);
                 if (sepIndex > -1) {
                     bestSplit = searchStart + sepIndex + sep.length;
@@ -593,8 +559,14 @@ class ChunkingStrategy {
         return chunks.filter(c => c.length > 0);
     }
 
+    /**
+     * Estimate token count for text (rough approximation)
+     * @param {string} text - Text to estimate
+     * @returns {number} Estimated token count
+     */
     static estimateTokens(text) {
         if (!text) return 0;
+        // Rough estimate: ~4 characters per token
         return Math.ceil(text.length / 4);
     }
 }
@@ -606,11 +578,16 @@ class ChunkingStrategy {
 class EmbeddingService {
     constructor(api) {
         this.api = api;
-        this.cache = new Map();
+        this.cache = new Map(); // hash -> embedding
         this.batchSize = 10;
         this.hasWarnedAboutFallback = false;
     }
 
+    /**
+     * Generate a simple hash for text caching
+     * @param {string} text - Text to hash
+     * @returns {string} Hash
+     */
     async hashText(text) {
         const encoder = new TextEncoder();
         const data = encoder.encode(text);
@@ -619,89 +596,45 @@ class EmbeddingService {
         return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
+    /**
+     * Generate embedding for a single text
+     * @param {string} text - Text to embed
+     * @returns {Promise<number[]>} Embedding vector
+     */
     async generateEmbedding(text) {
+        // Check cache first
         const hash = await this.hashText(text);
         if (this.cache.has(hash)) {
             return this.cache.get(hash);
         }
 
         try {
+            // Use Venice AI embeddings API if available
             const embedding = await this.getEmbeddingFromAPI(text);
+            
+            // Cache the result
             this.cache.set(hash, embedding);
             return embedding;
         } catch (error) {
             console.error('[EmbeddingService] API error, using fallback:', error);
-
+            
+            // Warn user about degraded search quality (once per session)
             if (!this.hasWarnedAboutFallback && typeof window !== 'undefined' && window.app && window.app.showToast) {
                 window.app.showToast('Knowledge Base using offline mode - search quality may be reduced', 'warning', 5000);
                 this.hasWarnedAboutFallback = true;
             }
-
+            
+            // Fallback: generate a simple hash-based pseudo-embedding for demo
             return this.generateFallbackEmbedding(text);
         }
     }
 
-    async discoverEmbeddingModel() {
-        if (this.embeddingModel) return;
-
-        try {
-            const apiKey = await this.getApiKey();
-            if (!apiKey) return;
-
-            const response = await fetch('https://api.venice.ai/api/v1/models', {
-                headers: { 'Authorization': `Bearer ${apiKey}` }
-            });
-            if (!response.ok) return;
-
-            const data = await response.json();
-            const embedModels = data.data.filter(m =>
-                m.id.toLowerCase().includes('embed') ||
-                m.id.toLowerCase().includes('bge') ||
-                m.id.toLowerCase().includes('ada')
-            );
-            if (embedModels.length > 0) {
-                this.embeddingModel = embedModels[0].id;
-                console.log('[EmbeddingService] Discovered model:', this.embeddingModel);
-
-                const isValid = await this.validateModel(this.embeddingModel);
-                if (!isValid) {
-                    console.warn('[EmbeddingService] Model validation failed, will use fallback');
-                    this.embeddingModel = null;
-                }
-            }
-        } catch (e) {
-            console.warn('[EmbeddingService] Model discovery failed:', e);
-        }
-    }
-
-    async validateModel(model) {
-        try {
-            const apiKey = await this.getApiKey();
-            if (!apiKey) return false;
-
-            const response = await fetch('https://api.venice.ai/api/v1/embeddings', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: model,
-                    input: 'test'
-                })
-            });
-
-            return response.ok;
-        } catch (e) {
-            return false;
-        }
-    }
-
+    /**
+     * Get embedding from Venice AI API
+     * @param {string} text - Text to embed
+     * @returns {Promise<number[]>} Embedding vector
+     */
     async getEmbeddingFromAPI(text) {
-        if (!this.embeddingModel) {
-            await this.discoverEmbeddingModel();
-        }
-
         const apiKey = await this.getApiKey();
         if (!apiKey) {
             throw new Error('No API key available');
@@ -714,7 +647,7 @@ class EmbeddingService {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: this.embeddingModel || undefined,
+                model: 'text-embedding-3-small',
                 input: text
             })
         });
@@ -727,6 +660,10 @@ class EmbeddingService {
         return data.data[0].embedding;
     }
 
+    /**
+     * Get API key from storage
+     * @returns {Promise<string|null>} API key
+     */
     async getApiKey() {
         if (window.storage && window.storage.getApiKey) {
             return await window.storage.getApiKey();
@@ -734,49 +671,67 @@ class EmbeddingService {
         return null;
     }
 
+    /**
+     * Generate a simple fallback embedding based on text content
+     * This is a deterministic pseudo-embedding for demo/offline use
+     * @param {string} text - Text to embed
+     * @returns {number[]} 384-dimensional pseudo-embedding
+     */
     generateFallbackEmbedding(text) {
         const dim = 384;
         const embedding = new Array(dim).fill(0);
-
+        
+        // Use character codes to generate a deterministic embedding
         for (let i = 0; i < text.length; i++) {
             const charCode = text.charCodeAt(i);
             embedding[i % dim] += charCode;
             embedding[(i * 7) % dim] += charCode * 0.5;
             embedding[(i * 13) % dim] += charCode * 0.25;
         }
-
+        
+        // Normalize the vector
         const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
         if (magnitude > 0) {
             for (let i = 0; i < dim; i++) {
                 embedding[i] /= magnitude;
             }
         }
-
+        
         return embedding;
     }
 
+    /**
+     * Generate embeddings for multiple texts in batches
+     * @param {string[]} texts - Array of texts to embed
+     * @param {function} onProgress - Progress callback (current, total)
+     * @returns {Promise<number[][]>} Array of embeddings
+     */
     async generateEmbeddingsBatch(texts, onProgress) {
         const embeddings = [];
-
+        
         for (let i = 0; i < texts.length; i += this.batchSize) {
             const batch = texts.slice(i, i + this.batchSize);
             const batchEmbeddings = await Promise.all(
                 batch.map(text => this.generateEmbedding(text))
             );
             embeddings.push(...batchEmbeddings);
-
+            
             if (onProgress) {
                 onProgress(Math.min(i + this.batchSize, texts.length), texts.length);
             }
-
+            
+            // Rate limiting delay
             if (i + this.batchSize < texts.length) {
                 await new Promise(r => setTimeout(r, 100));
             }
         }
-
+        
         return embeddings;
     }
 
+    /**
+     * Clear the embedding cache
+     */
     clearCache() {
         this.cache.clear();
     }
@@ -792,6 +747,17 @@ class RAGRetrieval {
         this.embeddingService = embeddingService;
     }
 
+    /**
+     * Retrieve relevant chunks for a query
+     * @param {string} query - User query
+     * @param {Object} options - Retrieval options
+     * @param {string[]} [options.kbIds] - KB IDs to search
+     * @param {number} [options.topK=5] - Number of chunks to retrieve
+     * @param {number} [options.similarityThreshold=0.5] - Minimum similarity
+     * @param {number} [options.maxTokens=2000] - Max tokens in context
+     * @param {string} [options.model] - Model ID for context adaptation
+     * @returns {Promise<Array>} Retrieved chunks with similarity scores
+     */
     async retrieve(query, options = {}) {
         const {
             kbIds = null,
@@ -801,55 +767,76 @@ class RAGRetrieval {
             model = null
         } = options;
 
+        // Generate query embedding
         const queryEmbedding = await this.embeddingService.generateEmbedding(query);
-
+        
+        // Search vector store (get more results for filtering)
         let results = this.vectorStore.search(queryEmbedding, topK * 2, kbIds);
-
+        
+        // Filter by similarity threshold
         results = results.filter(r => r.similarity >= similarityThreshold);
-
+        
+        // Adapt to model context window
         if (model) {
             results = this.adaptToModelContext(results, model, maxTokens);
         }
-
+        
+        // Simple reranking
         results = this.rerankResults(query, results);
-
+        
         return results.slice(0, topK);
     }
 
+    /**
+     * Adapt retrieved results to model context window
+     * @param {Array} results - Retrieved chunks
+     * @param {string} model - Model ID
+     * @param {number} maxTokens - Max tokens to use
+     * @returns {Array} Adapted results
+     */
     adaptToModelContext(results, model, maxTokens) {
-        const modelLimit = (typeof MODEL_CONTEXT_LIMITS !== 'undefined' && MODEL_CONTEXT_LIMITS[model])
-            ? MODEL_CONTEXT_LIMITS[model]
+        // Use MODEL_CONTEXT_LIMITS from venice-api.js if available
+        const modelLimit = (typeof MODEL_CONTEXT_LIMITS !== 'undefined' && MODEL_CONTEXT_LIMITS[model]) 
+            ? MODEL_CONTEXT_LIMITS[model] 
             : 128000;
-
+        
         const safeLimit = Math.min(maxTokens, Math.floor(modelLimit * 0.3));
-
+        
         let totalTokens = 0;
         const adapted = [];
-
+        
         for (const result of results) {
             const tokens = ChunkingStrategy.estimateTokens(result.content);
             if (totalTokens + tokens > safeLimit) break;
             adapted.push(result);
             totalTokens += tokens;
         }
-
+        
         return adapted;
     }
 
+    /**
+     * Rerank results based on keyword matching
+     * @param {string} query - User query
+     * @param {Array} results - Retrieved chunks
+     * @returns {Array} Reranked results
+     */
     rerankResults(query, results) {
         const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-
+        
         return results.sort((a, b) => {
-            const aMatches = queryWords.filter(w =>
+            // Count keyword matches
+            const aMatches = queryWords.filter(w => 
                 a.content.toLowerCase().includes(w)
             ).length;
-            const bMatches = queryWords.filter(w =>
+            const bMatches = queryWords.filter(w => 
                 b.content.toLowerCase().includes(w)
             ).length;
-
+            
+            // Boost score by keyword matches (10% weight)
             const aScore = a.similarity + (aMatches * 0.1);
             const bScore = b.similarity + (bMatches * 0.1);
-
+            
             return bScore - aScore;
         });
     }
@@ -860,42 +847,54 @@ class RAGRetrieval {
 // ============================================
 
 class ContextAssembler {
+    /**
+     * Assemble context string from retrieved chunks
+     * @param {Array} retrievedChunks - Retrieved chunks with similarity scores
+     * @param {string} query - User query
+     * @returns {Object} Context string and source metadata
+     */
     assembleContext(retrievedChunks, query) {
+        // Group chunks by document
         const byDocument = this.groupByDocument(retrievedChunks);
-
+        
         let context = '[Knowledge Base Context]\n\n';
         const sources = [];
-
+        
         for (const [docId, chunks] of Object.entries(byDocument)) {
             if (!chunks || chunks.length === 0) continue;
-
+            
             const doc = chunks[0];
             const filename = doc?.filename || 'Unknown';
             context += `## Source: ${filename}\n\n`;
-
+            
             for (const chunk of chunks) {
                 if (chunk && chunk.content) {
                     context += chunk.content + '\n\n';
                 }
             }
-
+            
             sources.push({
                 docId,
                 filename: filename,
                 pageNumber: doc?.metadata?.pageNumber,
                 chunkCount: chunks.length
             });
-
+            
             context += '---\n\n';
         }
-
+        
         context += `[User Query: ${query}]\n\n`;
         context += 'Please answer the user query using ONLY the information provided above. ';
         context += 'If the answer is not in the provided context, say "I cannot find information about this in your documents."';
-
+        
         return { context, sources };
     }
 
+    /**
+     * Group chunks by document ID
+     * @param {Array} chunks - Array of chunks
+     * @returns {Object} Groups by docId
+     */
     groupByDocument(chunks) {
         return chunks.reduce((acc, chunk) => {
             if (!acc[chunk.docId]) acc[chunk.docId] = [];
@@ -904,11 +903,17 @@ class ContextAssembler {
         }, {});
     }
 
+    /**
+     * Format response with source citations
+     * @param {string} response - AI response
+     * @param {Array} sources - Source metadata
+     * @returns {string} Formatted response with citations
+     */
     formatWithCitations(response, sources) {
         if (!sources || sources.length === 0) return response;
-
+        
         let formatted = response + '\n\n---\n\n**Sources:**\n';
-
+        
         sources.forEach((source, i) => {
             formatted += `[${i + 1}] ${source.filename}`;
             if (source.pageNumber) {
@@ -916,7 +921,7 @@ class ContextAssembler {
             }
             formatted += '\n';
         });
-
+        
         return formatted;
     }
 }
@@ -929,10 +934,14 @@ class KnowledgeBaseManager {
     constructor(ragDb, vectorStore) {
         this.db = ragDb;
         this.vectorStore = vectorStore;
-        this.activeKBs = new Map();
-        this.activeKBId = null;
+        this.activeKBs = new Map(); // conversationId -> Set(kbIds)
+        this.activeKBId = null;     // Global active KB for current session
     }
 
+    /**
+     * Activate a KB globally
+     * @param {string} kbId - KB ID
+     */
     async activateKB(kbId) {
         if (!this.vectorStore.isLoaded(kbId)) {
             await this.vectorStore.loadKnowledgeBase(kbId);
@@ -940,10 +949,19 @@ class KnowledgeBaseManager {
         this.activeKBId = kbId;
     }
 
+    /**
+     * Deactivate global KB
+     */
     async deactivateKB() {
         this.activeKBId = null;
     }
 
+    /**
+     * Create a new knowledge base
+     * @param {string} name - KB name
+     * @param {string} [description] - Optional description
+     * @returns {Promise<KnowledgeBase>} Created KB
+     */
     async createKnowledgeBase(name, description = '') {
         const kb = {
             id: crypto.randomUUID(),
@@ -961,26 +979,52 @@ class KnowledgeBaseManager {
         return kb;
     }
 
+    /**
+     * Get all knowledge bases
+     * @returns {Promise<KnowledgeBase[]>} Array of KBs
+     */
     async getAllKnowledgeBases() {
         return await this.db.getAll('knowledgeBases');
     }
 
+    /**
+     * Get a knowledge base by ID
+     * @param {string} kbId - KB ID
+     * @returns {Promise<KnowledgeBase|null>} KB or null
+     */
     async getKnowledgeBase(kbId) {
         return await this.db.get('knowledgeBases', kbId);
     }
 
+    /**
+     * Update a knowledge base
+     * @param {KnowledgeBase} kb - KB to update
+     * @returns {Promise<void>}
+     */
     async updateKnowledgeBase(kb) {
         kb.updatedAt = Date.now();
         await this.db.put('knowledgeBases', kb);
     }
 
+    /**
+     * Delete a knowledge base and all its data
+     * @param {string} kbId - KB ID
+     * @returns {Promise<void>}
+     */
     async deleteKnowledgeBase(kbId) {
+        // Delete all chunks
         await this.db.deleteAllFromIndex('chunks', 'kbId', kbId);
+        
+        // Delete all documents
         await this.db.deleteAllFromIndex('documents', 'kbId', kbId);
+        
+        // Delete KB
         await this.db.delete('knowledgeBases', kbId);
-
+        
+        // Unload from memory
         this.vectorStore.unloadKnowledgeBase(kbId);
-
+        
+        // Remove from active KBs
         for (const [convId, kbIds] of this.activeKBs.entries()) {
             if (kbIds.has(kbId)) {
                 kbIds.delete(kbId);
@@ -991,16 +1035,25 @@ class KnowledgeBaseManager {
         }
     }
 
+    /**
+     * Activate a KB for a conversation
+     * @param {string} conversationId - Conversation ID
+     * @param {string} kbId - KB ID
+     * @returns {Promise<void>}
+     */
     async activateKBForConversation(conversationId, kbId) {
+        // Load KB into memory if not already
         if (!this.vectorStore.isLoaded(kbId)) {
             await this.vectorStore.loadKnowledgeBase(kbId);
         }
 
+        // Associate with conversation
         if (!this.activeKBs.has(conversationId)) {
             this.activeKBs.set(conversationId, new Set());
         }
         this.activeKBs.get(conversationId).add(kbId);
 
+        // Persist association
         await this.db.put('conversationKB', {
             conversationId,
             kbId,
@@ -1009,18 +1062,26 @@ class KnowledgeBaseManager {
         });
     }
 
+    /**
+     * Deactivate a KB for a conversation
+     * @param {string} conversationId - Conversation ID
+     * @param {string} kbId - KB ID
+     * @returns {Promise<void>}
+     */
     async deactivateKBForConversation(conversationId, kbId) {
         const kbs = this.activeKBs.get(conversationId);
         if (kbs) {
             kbs.delete(kbId);
         }
 
+        // Update in DB
         const assoc = await this.db.get('conversationKB', conversationId);
         if (assoc && assoc.kbId === kbId) {
             assoc.active = false;
             await this.db.put('conversationKB', assoc);
         }
 
+        // Unload from memory if not used elsewhere
         const isUsedElsewhere = Array.from(this.activeKBs.values())
             .some(set => set.has(kbId));
 
@@ -1029,10 +1090,20 @@ class KnowledgeBaseManager {
         }
     }
 
+    /**
+     * Get active KBs for a conversation
+     * @param {string} conversationId - Conversation ID
+     * @returns {string[]} Array of active KB IDs
+     */
     getActiveKBs(conversationId) {
         return Array.from(this.activeKBs.get(conversationId) || []);
     }
 
+    /**
+     * Load active KBs for a conversation from storage
+     * @param {string} conversationId - Conversation ID
+     * @returns {Promise<void>}
+     */
     async loadActiveKBs(conversationId) {
         const assoc = await this.db.get('conversationKB', conversationId);
         if (assoc && assoc.active) {
@@ -1040,6 +1111,12 @@ class KnowledgeBaseManager {
         }
     }
 
+    /**
+     * Handle model switch - adjust retrieval parameters
+     * @param {string} conversationId - Conversation ID
+     * @param {string} newModel - New model ID
+     * @returns {Object} Adjusted retrieval parameters
+     */
     onModelSwitch(conversationId, newModel) {
         const modelLimit = (typeof MODEL_CONTEXT_LIMITS !== 'undefined' && MODEL_CONTEXT_LIMITS[newModel])
             ? MODEL_CONTEXT_LIMITS[newModel]
@@ -1054,6 +1131,11 @@ class KnowledgeBaseManager {
         return { topK: 5, maxTokens: 2000 };
     }
 
+    /**
+     * Update KB metadata after document changes
+     * @param {string} kbId - KB ID
+     * @returns {Promise<void>}
+     */
     async updateKBMetadata(kbId) {
         const docs = await this.db.getAllFromIndex('documents', 'kbId', kbId);
         const chunks = await this.db.getAllFromIndex('chunks', 'kbId', kbId);
@@ -1067,137 +1149,6 @@ class KnowledgeBaseManager {
             await this.db.put('knowledgeBases', kb);
         }
     }
-
-    /**
-     * Export a Knowledge Base to a JSON file
-     * @param {string} kbId - The Knowledge Base ID to export
-     * @returns {Promise<Object>} The export data object
-     */
-    async exportKBToJSON(kbId) {
-        const kb = await this.getKnowledgeBase(kbId);
-        if (!kb) {
-            throw new Error('Knowledge Base not found');
-        }
-
-        const docs = await this.db.getAllFromIndex('documents', 'kbId', kbId);
-        const chunks = await this.db.getAllFromIndex('chunks', 'kbId', kbId);
-
-        // Remove the extractedText from documents to reduce file size
-        // (it can be reconstructed from chunks if needed)
-        const docsExport = docs.map(doc => ({
-            ...doc,
-            extractedText: undefined
-        }));
-
-        const exportData = {
-            version: 1,
-            type: 'venice-kb-export',
-            exportedAt: Date.now(),
-            knowledgeBase: kb,
-            documents: docsExport,
-            chunks: chunks
-        };
-
-        return exportData;
-    }
-
-    /**
-     * Export a Knowledge Base to a downloadable file
-     * @param {string} kbId - The Knowledge Base ID to export
-     * @returns {Promise<{filename: string, blob: Blob}>}
-     */
-    async exportKBToFile(kbId) {
-        const exportData = await this.exportKBToJSON(kbId);
-        const kb = exportData.knowledgeBase;
-
-        const jsonString = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([jsonString], { type: 'application/json' });
-
-        const sanitizedName = kb.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        const filename = `venice-kb-${sanitizedName}-${new Date().toISOString().split('T')[0]}.json`;
-
-        return { filename, blob };
-    }
-
-    /**
-     * Import a Knowledge Base from a JSON object
-     * @param {Object} importData - The import data
-     * @param {string} [newName] - Optional new name for the KB
-     * @returns {Promise<KnowledgeBase>} The imported Knowledge Base
-     */
-    async importKBFromJSON(importData, newName = null) {
-        if (!importData || importData.type !== 'venice-kb-export') {
-            throw new Error('Invalid KB export file format');
-        }
-
-        // Create new KB with new ID
-        const originalKb = importData.knowledgeBase;
-        const newKbId = crypto.randomUUID();
-
-        const kb = {
-            ...originalKb,
-            id: newKbId,
-            name: newName || originalKb.name,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-        };
-
-        await this.db.put('knowledgeBases', kb);
-
-        // Import documents with new IDs
-        const docIdMap = new Map();
-        if (importData.documents) {
-            for (const doc of importData.documents) {
-                const newDocId = crypto.randomUUID();
-                docIdMap.set(doc.id, newDocId);
-
-                const newDoc = {
-                    ...doc,
-                    id: newDocId,
-                    kbId: newKbId,
-                    uploadedAt: Date.now()
-                };
-                await this.db.put('documents', newDoc);
-            }
-        }
-
-        // Import chunks with new IDs and updated references
-        if (importData.chunks) {
-            for (const chunk of importData.chunks) {
-                const newChunk = {
-                    ...chunk,
-                    id: crypto.randomUUID(),
-                    kbId: newKbId,
-                    docId: docIdMap.get(chunk.docId) || chunk.docId
-                };
-                await this.db.put('chunks', newChunk);
-            }
-        }
-
-        // Update metadata
-        await this.updateKBMetadata(newKbId);
-
-        return kb;
-    }
-
-    /**
-     * Import a Knowledge Base from a file
-     * @param {File} file - The file to import
-     * @param {string} [newName] - Optional new name for the KB
-     * @returns {Promise<KnowledgeBase>} The imported Knowledge Base
-     */
-    async importKBFromFile(file, newName = null) {
-        const text = await file.text();
-        let importData;
-
-        try {
-            importData = JSON.parse(text);
-        } catch (e) {
-            throw new Error('Invalid JSON file format');
-        }
-
-        return this.importKBFromJSON(importData, newName);
-    }
 }
 
 // ============================================
@@ -1210,12 +1161,20 @@ class FileLifecycleManager {
         this.vectorStore = vectorStore;
         this.embeddingService = embeddingService;
         this.documentProcessor = new DocumentProcessor();
-        this.kbManager = null;
+        this.kbManager = null; // Will be set by RAGSystem
     }
 
+    /**
+     * Add a file to a knowledge base
+     * @param {string} kbId - KB ID
+     * @param {File} file - File to add
+     * @param {function} onProgress - Progress callback
+     * @returns {Promise<Document>} Created document
+     */
     async addFile(kbId, file, onProgress) {
         const docId = crypto.randomUUID();
-
+        
+        // Create document record
         const doc = {
             id: docId,
             kbId,
@@ -1232,19 +1191,18 @@ class FileLifecycleManager {
         try {
             if (onProgress) onProgress({ status: 'extracting', progress: 10, message: 'Extracting text...' });
 
+            // Extract text
             const text = await this.documentProcessor.extractText(file);
             doc.extractedText = text;
 
             if (onProgress) onProgress({ status: 'chunking', progress: 30, message: 'Splitting into chunks...' });
 
-            const chunks = ChunkingStrategy.semantic(text).filter(c => c.trim().length > 20);
-
-            if (chunks.length === 0) {
-                throw new Error('No valid text content found to index');
-            }
+            // Chunk text (use semantic chunking)
+            const chunks = ChunkingStrategy.semantic(text);
 
             if (onProgress) onProgress({ status: 'embedding', progress: 50, message: 'Generating embeddings...' });
 
+            // Generate embeddings
             const embeddings = await this.embeddingService.generateEmbeddingsBatch(
                 chunks,
                 (current, total) => {
@@ -1257,6 +1215,7 @@ class FileLifecycleManager {
 
             if (onProgress) onProgress({ status: 'storing', progress: 90, message: 'Storing chunks...' });
 
+            // Store chunks
             const chunkRecords = chunks.map((content, i) => ({
                 id: crypto.randomUUID(),
                 kbId,
@@ -1274,15 +1233,18 @@ class FileLifecycleManager {
 
             for (const chunk of chunkRecords) {
                 await this.db.put('chunks', chunk);
+                // Also add to in-memory store if KB is loaded
                 if (this.vectorStore.isLoaded(kbId)) {
                     this.vectorStore.addChunk(chunk);
                 }
             }
 
+            // Update document status
             doc.status = 'ready';
             doc.chunkCount = chunks.length;
             await this.db.put('documents', doc);
 
+            // Update KB metadata
             if (this.kbManager) {
                 await this.kbManager.updateKBMetadata(kbId);
             }
@@ -1295,35 +1257,63 @@ class FileLifecycleManager {
             doc.status = 'error';
             doc.errorMessage = error.message;
             await this.db.put('documents', doc);
-
+            
             if (onProgress) onProgress({ status: 'error', progress: 0, message: error.message });
             throw error;
         }
     }
 
+    /**
+     * Remove a file from a knowledge base
+     * @param {string} kbId - KB ID
+     * @param {string} docId - Document ID
+     * @returns {Promise<void>}
+     */
     async removeFile(kbId, docId) {
+        // Delete chunks
         const chunks = await this.db.getAllFromIndex('chunks', 'docId', docId);
         for (const chunk of chunks) {
             await this.db.delete('chunks', chunk.id);
+            // Remove from in-memory store
             this.vectorStore.removeChunk(chunk.id, kbId);
         }
 
+        // Delete document
         await this.db.delete('documents', docId);
 
+        // Update KB metadata
         if (this.kbManager) {
             await this.kbManager.updateKBMetadata(kbId);
         }
     }
 
+    /**
+     * Update a file (re-process)
+     * @param {string} kbId - KB ID
+     * @param {string} docId - Document ID
+     * @param {File} newFile - New file
+     * @param {function} onProgress - Progress callback
+     * @returns {Promise<Document>} Updated document
+     */
     async updateFile(kbId, docId, newFile, onProgress) {
         await this.removeFile(kbId, docId);
         return await this.addFile(kbId, newFile, onProgress);
     }
 
+    /**
+     * Get all documents in a KB
+     * @param {string} kbId - KB ID
+     * @returns {Promise<Document[]>} Array of documents
+     */
     async getDocuments(kbId) {
         return await this.db.getAllFromIndex('documents', 'kbId', kbId);
     }
 
+    /**
+     * Get a document by ID
+     * @param {string} docId - Document ID
+     * @returns {Promise<Document|null>} Document or null
+     */
     async getDocument(docId) {
         return await this.db.get('documents', docId);
     }
@@ -1345,34 +1335,44 @@ class RAGSystem {
         this.initialized = false;
     }
 
+    /**
+     * Initialize the RAG system
+     * @param {VeniceAPI} api - Venice API instance
+     * @returns {Promise<void>}
+     */
     async init(api) {
         if (this.initialized) return;
 
-        try {
-            await this.db.init();
-        } catch (dbError) {
-            console.error('RAG Database initialization failed:', dbError.message);
-        }
-
+        // Initialize database
+        await this.db.init();
+        
+        // Initialize components
         this.vectorStore = new VectorStore(this.db);
         this.embeddingService = new EmbeddingService(api);
-
-        this.embeddingService.discoverEmbeddingModel();
-
         this.ragRetrieval = new RAGRetrieval(this.vectorStore, this.embeddingService);
         this.contextAssembler = new ContextAssembler();
         this.kbManager = new KnowledgeBaseManager(this.db, this.vectorStore);
         this.lifecycle = new FileLifecycleManager(this.db, this.vectorStore, this.embeddingService);
         this.lifecycle.kbManager = this.kbManager;
-
+        
         this.initialized = true;
         console.log('[RAGSystem] Initialized successfully');
     }
 
+    /**
+     * Check if system is initialized
+     * @returns {boolean}
+     */
     isReady() {
         return this.initialized;
     }
 
+    /**
+     * Query the knowledge base
+     * @param {string} query - User query
+     * @param {Object} options - Query options
+     * @returns {Promise<Object>} Query result with context and sources
+     */
     async query(query, options = {}) {
         if (!this.initialized) {
             throw new Error('RAG system not initialized');
@@ -1386,19 +1386,16 @@ class RAGSystem {
             model = null
         } = options;
 
-        let effectiveThreshold = similarityThreshold;
-        if (this.embeddingService.hasWarnedAboutFallback) {
-            effectiveThreshold = Math.min(similarityThreshold, 0.2);
-        }
-
+        // Retrieve relevant chunks
         const retrievedChunks = await this.ragRetrieval.retrieve(query, {
             kbIds,
             topK,
-            similarityThreshold: effectiveThreshold,
+            similarityThreshold,
             maxTokens,
             model
         });
 
+        // Assemble context
         const { context, sources } = this.contextAssembler.assembleContext(retrievedChunks, query);
 
         return {
@@ -1408,6 +1405,13 @@ class RAGSystem {
         };
     }
 
+    /**
+     * Query and get formatted response with citations
+     * @param {string} query - User query
+     * @param {string} aiResponse - AI response text
+     * @param {Object} options - Query options
+     * @returns {Promise<string>} Formatted response with citations
+     */
     async queryWithCitations(query, aiResponse, options = {}) {
         const { context, sources } = await this.query(query, options);
         return this.contextAssembler.formatWithCitations(aiResponse, sources);
