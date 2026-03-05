@@ -2915,7 +2915,7 @@ class App {
             // Populate Image Models
             if (this.models.imageModels && this.models.imageModels.length > 0) {
                 this.els.imageModelSelector.innerHTML = this.models.imageModels.map(m =>
-                    `<option value="${m.id}">${m.model_spec?.name || m.id}</option>`
+                    `<option value="${m.id}">${m.displayName || m.model_spec?.name || m.id}</option>`
                 ).join('');
             } else {
                 console.warn('⚠️ No image models available');

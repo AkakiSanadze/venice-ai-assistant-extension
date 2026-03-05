@@ -21,7 +21,7 @@ const MODEL_PRICING = {
     'openai-gpt-52-codex': { input: 2.19, output: 17.50, name: 'GPT-5.2 Codex' },
     'claude-sonnet-45': { input: 3.75, output: 18.75, name: 'Claude Sonnet 4.5' },
     'claude-opus-4-6': { input: 6.00, output: 30.00, name: 'Claude Opus 4.6' },
-    
+
     // Standard Models
     'qwen3-4b': { input: 0.05, output: 0.15, name: 'Venice Small' },
     'google-gemma-3-27b-it': { input: 0.12, output: 0.20, name: 'Gemma 3 27B' },
@@ -33,7 +33,7 @@ const MODEL_PRICING = {
     'mistral-31-24b': { input: 0.50, output: 2.00, name: 'Venice Medium' },
     'llama-3.3-70b': { input: 0.70, output: 2.80, name: 'Llama 3.3 70B' },
     'qwen3-coder-480b-a35b-instruct': { input: 0.75, output: 3.00, name: 'Qwen 3 Coder' },
-    
+
     // Beta Models
     'openai-gpt-oss-120b': { input: 0.07, output: 0.30, name: 'GPT OSS 120B' },
     'zai-org-glm-4.7-flash': { input: 0.125, output: 0.50, name: 'GLM 4.7 Flash' },
@@ -59,7 +59,7 @@ const MODEL_CONTEXT_LIMITS = {
     'openai-gpt-52-codex': 256000,   // 256K
     'claude-sonnet-45': 198000,      // 198K
     'claude-opus-4-6': 1000000,      // 1M
-    
+
     // Standard Models
     'qwen3-4b': 32000,               // 32K
     'google-gemma-3-27b-it': 198000, // 198K
@@ -71,7 +71,7 @@ const MODEL_CONTEXT_LIMITS = {
     'mistral-31-24b': 128000,        // 128K
     'llama-3.3-70b': 128000,         // 128K
     'qwen3-coder-480b-a35b-instruct': 256000, // 256K
-    
+
     // Beta Models
     'openai-gpt-oss-120b': 128000,   // 128K
     'zai-org-glm-4.7-flash': 128000, // 128K
@@ -123,7 +123,7 @@ const MODEL_PATTERNS = {
 };
 
 // Model list caching constants
-const MODEL_CACHE_KEY = 'venice_models_cache';
+const MODEL_CACHE_KEY = 'venice_models_cache_v3';
 const MODEL_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 /**
@@ -165,13 +165,13 @@ class TextChunker {
 
             // Find the best split point
             const splitPoint = this.findBestSplitPoint(remaining);
-            
+
             // Extract the chunk
             const chunk = remaining.substring(0, splitPoint).trim();
             if (chunk.length > 0) {
                 chunks.push(chunk);
             }
-            
+
             // Move to remaining text
             remaining = remaining.substring(splitPoint).trim();
         }
@@ -296,7 +296,8 @@ class VeniceAPI {
         this.apiKey = null;
         this.abortController = null;
         this.modelsCache = null; // In-memory cache
-        this.dynamicPricing = {}; // Pricing from API
+        this.dynamicPricing = {}; // Pricing from API (text models)
+        this.dynamicImagePricing = {}; // Pricing from API (image models)
         this.dynamicContextLimits = {}; // Context limits from API
     }
 
@@ -315,12 +316,12 @@ class VeniceAPI {
         if (this.dynamicPricing[modelId]) {
             return this.dynamicPricing[modelId];
         }
-        
+
         // Then check hardcoded pricing
         if (MODEL_PRICING[modelId]) {
             return MODEL_PRICING[modelId];
         }
-        
+
         // Finally try smart estimation based on model patterns
         const estimated = this.estimateModelDefaults(modelId);
         return estimated.pricing;
@@ -329,16 +330,16 @@ class VeniceAPI {
     // Estimate model defaults based on model ID patterns
     estimateModelDefaults(modelId) {
         const id = modelId.toLowerCase();
-        
+
         // Check each pattern category
         for (const [category, config] of Object.entries(MODEL_PATTERNS)) {
             for (const pattern of config.patterns) {
                 if (id.includes(pattern)) {
                     return {
-                        pricing: { 
-                            input: config.pricing.input, 
-                            output: config.pricing.output, 
-                            name: modelId 
+                        pricing: {
+                            input: config.pricing.input,
+                            output: config.pricing.output,
+                            name: modelId
                         },
                         contextLimit: config.contextLimit,
                         estimated: true,
@@ -347,7 +348,7 @@ class VeniceAPI {
                 }
             }
         }
-        
+
         // Default fallback for unknown models
         return {
             pricing: { input: 0.20, output: 1.00, name: modelId },
@@ -384,12 +385,12 @@ class VeniceAPI {
         if (this.dynamicContextLimits[modelId]) {
             return this.dynamicContextLimits[modelId];
         }
-        
+
         // Then check hardcoded limits
         if (MODEL_CONTEXT_LIMITS[modelId]) {
             return MODEL_CONTEXT_LIMITS[modelId];
         }
-        
+
         // Finally try smart estimation based on model patterns
         const estimated = this.estimateModelDefaults(modelId);
         return estimated.contextLimit;
@@ -398,11 +399,11 @@ class VeniceAPI {
     // Calculate total context usage for a conversation
     calculateContextUsage(messages, modelId) {
         const contextLimit = this.getContextLimit(modelId);
-        
+
         // Sum all prompt tokens from assistant messages
         // Note: prompt_tokens represents the input context for each API call
         let totalContextTokens = 0;
-        
+
         for (const msg of messages) {
             if (msg.role === 'assistant' && msg.usage?.prompt_tokens) {
                 // The last assistant message has the most accurate prompt_tokens
@@ -410,7 +411,7 @@ class VeniceAPI {
                 totalContextTokens = msg.usage.prompt_tokens;
             }
         }
-        
+
         // If no assistant messages yet, estimate from user messages
         if (totalContextTokens === 0) {
             for (const msg of messages) {
@@ -419,10 +420,10 @@ class VeniceAPI {
                 }
             }
         }
-        
+
         const percentage = (totalContextTokens / contextLimit) * 100;
         const remaining = contextLimit - totalContextTokens;
-        
+
         return {
             used: totalContextTokens,
             limit: contextLimit,
@@ -462,12 +463,13 @@ class VeniceAPI {
         try {
             const cached = localStorage.getItem(MODEL_CACHE_KEY);
             if (cached) {
-                const { data, timestamp, pricing, contextLimits } = JSON.parse(cached);
-                // Check if cache is still valid
-                if (Date.now() - timestamp < MODEL_CACHE_TTL) {
+                const { data, timestamp, pricing, imagePricing, contextLimits } = JSON.parse(cached);
+                // Check if cache is still valid AND has image models (structural validation)
+                if (Date.now() - timestamp < MODEL_CACHE_TTL && data?.imageModels?.length > 0) {
                     this.modelsCache = data;
                     // Restore dynamic pricing and context limits from cache
                     if (pricing) this.dynamicPricing = pricing;
+                    if (imagePricing) this.dynamicImagePricing = imagePricing;
                     if (contextLimits) this.dynamicContextLimits = contextLimits;
                     return data;
                 }
@@ -479,99 +481,93 @@ class VeniceAPI {
             console.warn('Model cache read error:', e);
         }
 
-        // Fetch from API
-        const resp = await fetch(`${this.baseUrl}/models`, {
-            headers: {
-                'Authorization': `Bearer ${this.apiKey}`,
-                'Accept-Encoding': 'gzip, deflate, br'
-            }
-        });
-        if (!resp.ok) throw new Error('Failed to fetch models');
+        // Fetch text and image models in parallel
+        // Venice API /models only returns text models; image models require ?type=image
+        const authHeaders = {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Accept-Encoding': 'gzip, deflate, br'
+        };
 
-        const { data } = await resp.json();
+        const [textResp, imageResp] = await Promise.all([
+            fetch(`${this.baseUrl}/models`, { headers: authHeaders }),
+            fetch(`${this.baseUrl}/models?type=image`, { headers: authHeaders })
+        ]);
 
-        // Extract pricing and context limits from API response
-        for (const model of data) {
+        if (!textResp.ok) throw new Error('Failed to fetch models');
+        const textData = (await textResp.json()).data || [];
+
+        let imageData = [];
+        if (imageResp.ok) {
+            const imageJson = await imageResp.json();
+            imageData = imageJson.data || [];
+            console.log(`🖼️ Image models API response: ${imageData.length} models, type=${imageJson.type}`);
+        } else {
+            console.warn('⚠️ Failed to fetch image models, status:', imageResp.status);
+        }
+
+        // Extract text model pricing and context limits
+        for (const model of textData) {
             if (model.model_spec) {
-                // Extract pricing
                 if (model.model_spec.pricing) {
                     const inputPrice = model.model_spec.pricing.input?.usd || 0;
                     const outputPrice = model.model_spec.pricing.output?.usd || 0;
                     const modelName = model.model_spec.name || model.id;
-                    
+
                     this.dynamicPricing[model.id] = {
                         input: inputPrice,
                         output: outputPrice,
                         name: modelName
                     };
                 }
-                
-                // Extract context limit
                 if (model.model_spec.availableContextTokens) {
                     this.dynamicContextLimits[model.id] = model.model_spec.availableContextTokens;
                 }
             }
         }
-        
-        console.log(`📊 Loaded ${Object.keys(this.dynamicPricing).length} model prices from API`);
 
-        // Filter text models
-        const textModels = data.filter(m => m.type === 'text' && !m.model_spec?.offline);
-        
-        // Filter image models - check multiple possible formats
-        let imageModels = data.filter(m => m.type === 'image' && !m.model_spec?.offline);
-        
-        // Fallback: if no image models found, check for models with image capabilities
-        if (imageModels.length === 0) {
-            // Some APIs might mark image models differently
-            imageModels = data.filter(m => 
-                m.id?.includes('flux') || 
-                m.id?.includes('diffusion') || 
-                m.id?.includes('stable') ||
-                m.id?.includes('pony') ||
-                m.id?.includes('fluently') ||
-                m.id?.includes('zavanice') ||
-                m.model_spec?.capabilities?.supportsImageGeneration
-            );
+        // Extract image model pricing
+        for (const model of imageData) {
+            if (model.model_spec?.pricing) {
+                this.dynamicImagePricing[model.id] = model.model_spec.pricing;
+            }
         }
 
-        // Hardcoded fallback image models (from Venice AI docs - updated Feb 2026)
-        // Pricing: per image generated
+        console.log(`📊 Loaded ${Object.keys(this.dynamicPricing).length} text model prices, ${Object.keys(this.dynamicImagePricing).length} image model prices from API`);
+
+        // Filter text models (exclude offline)
+        const textModels = textData.filter(m => m.type === 'text' && !m.model_spec?.offline);
+
+        // Filter image models (exclude offline)
+        let imageModels = imageData.filter(m => !m.model_spec?.offline);
+
         if (imageModels.length === 0) {
-            imageModels = [
-                // Premium Models
-                { id: 'gpt-image-1-5', type: 'image', model_spec: { name: 'GPT Image 1.5 ($0.23)' } },
-                { id: 'nano-banana-pro', type: 'image', model_spec: { name: 'Nano Banana Pro ($0.18)' } },
-                { id: 'flux-2-max', type: 'image', model_spec: { name: 'Flux 2 Max ($0.09)' } },
-                { id: 'imagineart-1.5-pro', type: 'image', model_spec: { name: 'ImagineArt 1.5 Pro ($0.05)' } },
-                { id: 'seedream-v4', type: 'image', model_spec: { name: 'SeedreamV4.5 ($0.05)' } },
-                { id: 'flux-2-pro', type: 'image', model_spec: { name: 'Flux 2 Pro ($0.04)' } },
-                
-                // Standard Models - $0.01-$0.02
-                { id: 'bg-remover', type: 'image', model_spec: { name: 'Background Remover ($0.02)' } },
-                { id: 'venice-sd35', type: 'image', model_spec: { name: 'Venice SD35 ($0.01)' } },
-                { id: 'hidream', type: 'image', model_spec: { name: 'HiDream ($0.01)' } },
-                { id: 'lustify-sdxl', type: 'image', model_spec: { name: 'Lustify SDXL ($0.01) 🔞' } },
-                { id: 'lustify-v7', type: 'image', model_spec: { name: 'Lustify v7 ($0.01) 🔞' } },
-                { id: 'qwen-image', type: 'image', model_spec: { name: 'Qwen Image ($0.01)' } },
-                { id: 'wai-Illustrious', type: 'image', model_spec: { name: 'Anime WAI ($0.01)' } },
-                { id: 'z-image-turbo', type: 'image', model_spec: { name: 'Z-Image Turbo ($0.01)' } },
-                { id: 'chroma', type: 'image', model_spec: { name: 'Chroma ($0.01)' } }
-            ];
+            console.warn('⚠️ No image models available after filtering');
+        } else {
+            console.log(`🖼️ ${imageModels.length} image models ready`);
         }
+
+        // Enrich image models with a formatted display name that includes pricing
+        imageModels = imageModels.map(m => {
+            const priceLabel = this.getImageModelPriceLabel(m);
+            const displayName = priceLabel
+                ? `${m.model_spec?.name || m.id} (${priceLabel})`
+                : (m.model_spec?.name || m.id);
+            return { ...m, displayName };
+        });
 
         const visionModels = textModels.filter(m => m.model_spec?.capabilities?.supportsVision);
 
         const result = { textModels, imageModels, visionModels };
-        
+
         // Cache the result in memory
         this.modelsCache = result;
-        
+
         // Cache in localStorage (including pricing and context limits)
         try {
             localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify({
                 data: result,
                 pricing: this.dynamicPricing,
+                imagePricing: this.dynamicImagePricing,
                 contextLimits: this.dynamicContextLimits,
                 timestamp: Date.now()
             }));
@@ -705,9 +701,9 @@ class VeniceAPI {
 
                     try {
                         const parsed = JSON.parse(jsonStr);
-                        
+
                         const content = parsed.choices?.[0]?.delta?.content || '';
-                        
+
                         // Check for reasoning_content field (used by some thinking models like DeepSeek, GLM)
                         const reasoningContent = parsed.choices?.[0]?.delta?.reasoning_content || '';
 
@@ -727,8 +723,8 @@ class VeniceAPI {
                         if (content) {
                             // Detect thinking tags FIRST to determine what to add to fullText
                             const detected = detectThinkingTag(content);
-                            
-                            
+
+
                             if (detected) {
                                 if (detected.type === 'start') {
                                     isThinking = true;
@@ -783,7 +779,7 @@ class VeniceAPI {
 
                             // Call onChunk with CLEAN visible text (no think tags)
                             onChunk(cleanFullText, thinkingText);
-                            
+
                             // Also apply the extraction fix during streaming for models without thinking tags
                             // If cleanFullText is empty but thinkingText has visible content, extract it
                             let streamingFullText = cleanFullText;
@@ -793,11 +789,11 @@ class VeniceAPI {
                                 const allKeyTakeawayMatches = [...thinkingText.matchAll(/Key Takeaway:\s*([\s\S]*?)(?:\n\n|Watch If:|Skip If:)/gi)];
                                 const allWatchIfMatches = [...thinkingText.matchAll(/Watch If:\s*([\s\S]*?)(?:\n\n|Skip If:)/gi)];
                                 const allSkipIfMatches = [...thinkingText.matchAll(/Skip If:\s*([\s\S]*?)$/gim)];
-                                
+
                                 if (allMainIdeaMatches.length > 0) {
                                     const lastMainIdea = allMainIdeaMatches[allMainIdeaMatches.length - 1];
                                     streamingFullText = 'Main Idea: ' + (lastMainIdea[1] ? lastMainIdea[1].trim() : '');
-                                    
+
                                     if (allKeyTakeawayMatches.length > 0) {
                                         const lastKeyTakeaway = allKeyTakeawayMatches[allKeyTakeawayMatches.length - 1];
                                         if (lastKeyTakeaway[1]) streamingFullText += '\n\nKey Takeaway: ' + lastKeyTakeaway[1].trim();
@@ -821,7 +817,7 @@ class VeniceAPI {
                     }
                 }
             }
-            
+
             // If no usage from API, estimate tokens
             if (!usage) {
                 // Estimate input tokens from all messages
@@ -838,8 +834,8 @@ class VeniceAPI {
                     estimated: true
                 };
             }
-            
-            
+
+
             // Build clean visible text (strip all thinking blocks) - same logic as in onChunk
             const cleanFullText = fullText
                 .replace(/<think[\s\S]*?<\/think>/gi, '')
@@ -865,7 +861,7 @@ class VeniceAPI {
                 .replace(/<kimthink>[\s\S]*/gi, '')
                 .replace(/<output>[\s\S]*/gi, '')
                 .trim();
-            
+
             // FIX: Handle models that output thinking WITHOUT tags (like Qwen 3.5)
             // If fullText is empty but thinkingText contains what looks like final output,
             // try to extract visible content from thinkingText
@@ -874,18 +870,18 @@ class VeniceAPI {
                 // Look for the FINAL occurrence of response markers (after thinking is done)
                 // The thinking process typically has "Drafting", "Final Review", "Final Polish" sections
                 // We want the content AFTER "Final Review" or "Final Selection"
-                
+
                 // First, check for explicit final output markers
                 const finalSelectionMatch = thinkingText.match(/Final Selection:([\s\S]*)/i);
                 const finalOutputMatch = thinkingText.match(/Output:([\s\S]*)/i);
                 const finalAnswerMatch = thinkingText.match(/Final Answer:([\s\S]*)/i);
-                
+
                 // If no explicit markers, find the last occurrence of Main Idea (after all drafts)
                 const allMainIdeaMatches = [...thinkingText.matchAll(/Main Idea:\s*([\s\S]*?)(?:\n\n|Key Takeaway:|Watch If:|Skip If:)/gi)];
                 const allKeyTakeawayMatches = [...thinkingText.matchAll(/Key Takeaway:\s*([\s\S]*?)(?:\n\n|Watch If:|Skip If:)/gi)];
                 const allWatchIfMatches = [...thinkingText.matchAll(/Watch If:\s*([\s\S]*?)(?:\n\n|Skip If:)/gi)];
                 const allSkipIfMatches = [...thinkingText.matchAll(/Skip If:\s*([\s\S]*?)$/gim)];
-                
+
                 if (finalSelectionMatch || finalOutputMatch || finalAnswerMatch) {
                     // Use explicit final output marker
                     const match = finalSelectionMatch || finalOutputMatch || finalAnswerMatch;
@@ -907,7 +903,7 @@ class VeniceAPI {
                     // Use the LAST occurrence of Main Idea (after all drafts)
                     const lastMainIdea = allMainIdeaMatches[allMainIdeaMatches.length - 1];
                     finalCleanFullText = 'Main Idea: ' + (lastMainIdea[1] ? lastMainIdea[1].trim() : '');
-                    
+
                     // Append the last occurrences of other sections too
                     if (allKeyTakeawayMatches.length > 0) {
                         const lastKeyTakeaway = allKeyTakeawayMatches[allKeyTakeawayMatches.length - 1];
@@ -922,10 +918,10 @@ class VeniceAPI {
                         if (lastSkipIf[1]) finalCleanFullText += '\n\nSkip If: ' + lastSkipIf[1].trim();
                     }
                 }
-                
+
             }
-            
-            
+
+
             onDone(finalCleanFullText, thinkingText, usage);
         } catch (error) {
             if (error.name !== 'AbortError') onError(error);
@@ -946,11 +942,12 @@ class VeniceAPI {
     clearModelsCache() {
         // Clear in-memory cache
         this.modelsCache = null;
-        
+
         // Clear dynamic pricing and context limits
         this.dynamicPricing = {};
+        this.dynamicImagePricing = {};
         this.dynamicContextLimits = {};
-        
+
         // Clear localStorage cache
         try {
             localStorage.removeItem(MODEL_CACHE_KEY);
@@ -958,6 +955,41 @@ class VeniceAPI {
         } catch (e) {
             console.warn('Failed to clear models cache from localStorage:', e);
         }
+    }
+
+    /**
+     * Build a human-readable price label for an image model.
+     * Venice AI image models use two distinct pricing structures:
+     *  - generation: flat per-image price  { usd: 0.04 }
+     *  - resolutions: tiered pricing        { "1K": { usd: 0.10 }, "2K": { usd: 0.14 }, "4K": { usd: 0.19 } }
+     * @param {object} model - A model object from the API
+     * @returns {string} e.g. "$0.04/img" or "$0.10–$0.19/img" or ""
+     */
+    getImageModelPriceLabel(model) {
+        // Prefer live pricing captured during this session, fall back to model_spec
+        const pricing = this.dynamicImagePricing[model.id] || model.model_spec?.pricing;
+        if (!pricing) return '';
+
+        // Flat per-image price
+        if (pricing.generation?.usd != null) {
+            return `$${pricing.generation.usd.toFixed(2)}/img`;
+        }
+
+        // Tiered resolution pricing — show min–max range
+        if (pricing.resolutions) {
+            const prices = Object.values(pricing.resolutions)
+                .map(r => r.usd)
+                .filter(p => typeof p === 'number');
+            if (prices.length > 0) {
+                const min = Math.min(...prices);
+                const max = Math.max(...prices);
+                return min === max
+                    ? `$${min.toFixed(2)}/img`
+                    : `$${min.toFixed(2)}–$${max.toFixed(2)}/img`;
+            }
+        }
+
+        return '';
     }
 
     async generateImage(prompt, model, size) {
@@ -1033,11 +1065,11 @@ class VeniceAPI {
      */
     async generateSpeechChunked(text, options = {}, onProgress, abortSignal) {
         const { voice, speed = 1 } = options;
-        
+
         // Create chunker and split text
         const chunker = new TextChunker();
         const chunks = chunker.split(text);
-        
+
         // Report initial status
         if (onProgress) {
             onProgress({
@@ -1085,7 +1117,7 @@ class VeniceAPI {
                     break; // Success, exit retry loop
                 } catch (error) {
                     lastError = error;
-                    
+
                     // Don't retry for non-retryable errors (auth, invalid input, etc.)
                     if (this.isNonRetryableError(error)) {
                         throw new Error(`TTS failed on chunk ${i + 1}/${chunks.length}: ${error.message}`);
@@ -1095,7 +1127,7 @@ class VeniceAPI {
                     if (attempt < maxRetries) {
                         const delay = baseDelay * Math.pow(2, attempt); // 1s, 2s, 4s
                         console.warn(`TTS chunk ${i + 1} attempt ${attempt + 1} failed, retrying in ${delay}ms...`, error.message);
-                        
+
                         if (onProgress) {
                             onProgress({
                                 current: i + 1,
@@ -1104,7 +1136,7 @@ class VeniceAPI {
                                 message: `Chunk ${i + 1} failed, retrying (${attempt + 1}/${maxRetries})...`
                             });
                         }
-                        
+
                         await this.sleep(delay, abortSignal);
                     }
                 }
@@ -1155,22 +1187,22 @@ class VeniceAPI {
      */
     isNonRetryableError(error) {
         const message = error.message?.toLowerCase() || '';
-        
+
         // Auth errors
         if (message.includes('401') || message.includes('403') || message.includes('unauthorized') || message.includes('forbidden')) {
             return true;
         }
-        
+
         // Invalid input errors
         if (message.includes('400') || message.includes('bad request') || message.includes('invalid')) {
             return true;
         }
-        
+
         // Rate limit - should retry
         if (message.includes('429') || message.includes('rate limit')) {
             return false;
         }
-        
+
         // Default: retry network errors
         return false;
     }
@@ -1184,13 +1216,13 @@ class VeniceAPI {
     sleep(ms, abortSignal) {
         return new Promise((resolve, reject) => {
             const timeoutId = setTimeout(resolve, ms);
-            
+
             if (abortSignal) {
                 const onAbort = () => {
                     clearTimeout(timeoutId);
                     reject(new DOMException('Sleep aborted', 'AbortError'));
                 };
-                
+
                 if (abortSignal.aborted) {
                     clearTimeout(timeoutId);
                     reject(new DOMException('Sleep aborted', 'AbortError'));
