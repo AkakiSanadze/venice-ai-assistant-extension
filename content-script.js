@@ -325,25 +325,26 @@ async function getYouTubeTranscript() {
         throw new Error('Not a YouTube video page');
     }
 
-    // Method 0: Try to get transcript from DOM if panel is already open
+        // Method 0: Try to get transcript from DOM if panel is already open
     try {
         console.log('[Transcript] Method 0: Checking for visible transcript panel in DOM');
-        const segments = document.querySelectorAll('ytd-transcript-segment-renderer .segment-text, .cue-group .cue');
-        if (segments.length > 0) {
-            const text = Array.from(segments).map(s => s.innerText || s.textContent).filter(t => t && t.trim()).join(' ');
-            if (text.length > 50) {
-                console.log('[Transcript] Method 0 (DOM) succeeded, length:', text.length);
-                return text.replace(/\s+/g, ' ').trim();
-            }
-        }
+        const selectors = [
+            'ytd-transcript-segment-renderer .segment-text',
+            '.cue-group .cue',
+            '.ytwTranscriptSegmentViewModelHost .yt-core-attributed-string',
+            'transcript-segment-view-model .yt-core-attributed-string',
+            'ytd-transcript-search-panel-renderer .segment-text'
+        ];
         
-        // Also try transcript search panel
-        const transcriptItems = document.querySelectorAll('.transcript-item, ytd-transcript-search-panel-renderer .segment-text');
-        if (transcriptItems.length > 0) {
-            const text = Array.from(transcriptItems).map(s => s.innerText || s.textContent).filter(t => t && t.trim()).join(' ');
-            if (text.length > 50) {
-                console.log('[Transcript] Method 0 (DOM transcript panel) succeeded, length:', text.length);
-                return text.replace(/\s+/g, ' ').trim();
+        let foundText = '';
+        for (const selector of selectors) {
+            const segments = document.querySelectorAll(selector);
+            if (segments.length > 0) {
+                foundText = Array.from(segments).map(s => s.innerText || s.textContent).filter(t => t && t.trim()).join(' ');
+                if (foundText.length > 50) {
+                    console.log(`[Transcript] Method 0 (DOM) succeeded via ${selector}, length:`, foundText.length);
+                    return foundText.replace(/\s+/g, ' ').trim();
+                }
             }
         }
     } catch (e) {
@@ -433,34 +434,45 @@ async function getYouTubeTranscript() {
 
     // Method 4: DOM Interaction Fallback - Click "Show transcript" button
     try {
-        // Click ...more if needed
-        const moreBtn = document.querySelector('tp-yt-paper-button#expand');
-        if (moreBtn) moreBtn.click();
+        // 1. Expand description if not already expanded
+        const moreBtn = document.querySelector('tp-yt-paper-button#expand, ytd-text-inline-expander #expand');
+        if (moreBtn && moreBtn.getAttribute('aria-expanded') !== 'true') {
+            console.log('[Transcript] Expanding description...');
+            moreBtn.click();
+            await new Promise(r => setTimeout(r, 600));
+        }
 
-        // Wait for description to expand, then find "Show transcript"
-        await new Promise(r => setTimeout(r, 500));
-
-        const showTranscriptBtn = Array.from(document.querySelectorAll('button'))
-            .find(b => b.innerText.includes('Show transcript') || b.getAttribute('aria-label')?.includes('Show transcript'));
+        // 2. Find "Show transcript" button - use language-agnostic approach
+        // Look for buttons in the secondary description section
+        let showTranscriptBtn = document.querySelector('ytd-video-description-transcript-section-renderer button');
+        
+        if (!showTranscriptBtn) {
+            // Fallback to text searching if selector fails
+            showTranscriptBtn = Array.from(document.querySelectorAll('button, ytd-button-renderer'))
+                .find(b => {
+                    const txt = (b.innerText || b.textContent || '').toLowerCase();
+                    return txt.includes('transcript') || txt.includes('ტრანსკრიპტ');
+                });
+        }
 
         if (showTranscriptBtn) {
+            console.log('[Transcript] Clicking Show Transcript button...');
             showTranscriptBtn.click();
-            await new Promise(r => setTimeout(r, 1500));
             
-            // Try multiple selectors for transcript segments
-            const selectors = [
-                'ytd-transcript-segment-renderer .segment-text',
-                '.cue-group .cue',
-                '.transcript-item .segment-text',
-                'ytd-transcript-search-panel-renderer .segment-text'
-            ];
-            
-            for (const selector of selectors) {
-                const segments = document.querySelectorAll(selector);
-                if (segments.length > 0) {
-                    const text = Array.from(segments).map(s => s.innerText).join(' ');
-                    if (text.length > 50) {
-                        console.log('[Transcript] Method 4 (DOM interaction) succeeded, length:', text.length);
+            // Wait for panel and segments to load
+            for (let i = 0; i < 10; i++) {
+                await new Promise(r => setTimeout(r, 400));
+                const selectors = [
+                    '.ytwTranscriptSegmentViewModelHost .yt-core-attributed-string',
+                    'transcript-segment-view-model .yt-core-attributed-string',
+                    'ytd-transcript-segment-renderer .segment-text'
+                ];
+                
+                for (const selector of selectors) {
+                    const segments = document.querySelectorAll(selector);
+                    if (segments.length > 10) {
+                        const text = Array.from(segments).map(s => s.innerText).join(' ');
+                        console.log(`[Transcript] Method 4 (DOM interaction) succeeded via ${selector}, length:`, text.length);
                         return text.replace(/\s+/g, ' ').trim();
                     }
                 }
