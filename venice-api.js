@@ -993,32 +993,48 @@ class VeniceAPI {
     }
 
     async generateImage(prompt, model, size) {
-        const resp = await fetch(`${this.baseUrl}/images/generations`, {
+        // Parse size to width and height for the native endpoint
+        let width = 1024;
+        let height = 1024;
+        if (size && size.includes('x')) {
+            const parts = size.split('x');
+            width = parseInt(parts[0], 10) || 1024;
+            height = parseInt(parts[1], 10) || 1024;
+        }
+
+        const payload = {
+            model,
+            prompt,
+            width,
+            height,
+            safe_mode: false, // Supported on the native endpoint
+            hide_watermark: true,
+            return_binary: false // We want base64 JSON response
+        };
+
+        const resp = await fetch(`${this.baseUrl}/image/generate`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${this.apiKey}`,
                 'Content-Type': 'application/json',
                 'Accept-Encoding': 'gzip, deflate, br'
             },
-            body: JSON.stringify({
-                model,
-                prompt,
-                n: 1,
-                size, // Venice /images/generations requires OpenAI standard format
-                safe_mode: false, // Disable server-side NSFW blur filter
-                hide_watermark: true,
-                response_format: "b64_json",
-                output_format: "png"
-            })
+            body: JSON.stringify(payload)
         });
 
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error?.message || 'Image generation failed');
+            throw new Error(err.error?.message || err.message || 'Image generation failed');
         }
 
-        const { data } = await resp.json();
-        return { b64: data[0].b64_json };
+        const data = await resp.json();
+        
+        // Venice native /image/generate returns { images: ["<base64>"] }
+        if (data.images && data.images.length > 0) {
+            return { b64: data.images[0] };
+        }
+        
+        throw new Error('No image returned from API');
     }
 
     async textToSpeech(text, voice, speed = 1) {

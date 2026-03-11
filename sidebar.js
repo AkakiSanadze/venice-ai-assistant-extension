@@ -791,6 +791,14 @@ class App {
             imageActions: document.getElementById('image-actions'),
             downloadImageBtn: document.getElementById('download-image-btn'),
             copyImageBtn: document.getElementById('copy-image-btn'),
+            imageProgressContainer: document.getElementById('image-progress-container'),
+            imageProgressFill: document.getElementById('image-progress-fill'),
+            imageProgressText: document.getElementById('image-progress-text'),
+
+            // Image lightbox
+            imageLightbox: document.getElementById('image-lightbox'),
+            lightboxImg: document.getElementById('lightbox-img'),
+            lightboxClose: document.getElementById('lightbox-close'),
 
             // TTS view
             ttsInput: document.getElementById('tts-input'),
@@ -1082,6 +1090,16 @@ class App {
         }
         if (this.els.copyImageBtn) {
             this.els.copyImageBtn.onclick = () => this.copyGeneratedImage();
+        }
+
+        // Image Lightbox
+        if (this.els.lightboxClose) {
+            this.els.lightboxClose.onclick = () => this.closeLightbox();
+        }
+        if (this.els.imageLightbox) {
+            this.els.imageLightbox.onclick = (e) => {
+                if (e.target === this.els.imageLightbox) this.closeLightbox();
+            };
         }
 
         // TTS
@@ -6212,8 +6230,20 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
         if (!prompt) return;
 
         this.els.generateImageBtn.disabled = true;
-        this.els.imageResult.innerHTML = '✨ Creating...';
+        this.els.imageResult.innerHTML = '';
         this.els.imageActions.classList.add('hidden');
+
+        // Show progress
+        this.els.imageProgressContainer.classList.remove('hidden');
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            // Simulate progress that slows down as it approaches 95%
+            const remaining = 95 - progress;
+            progress += remaining * 0.04;
+            progress = Math.min(progress, 95);
+            this.els.imageProgressFill.style.width = `${progress}%`;
+            this.els.imageProgressText.textContent = `Generating image... ${Math.round(progress)}%`;
+        }, 300);
 
         try {
             const result = await this.api.generateImage(
@@ -6221,10 +6251,28 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                 this.els.imageModelSelector.value,
                 this.els.imageSizeSelector.value
             );
+            // Complete progress
+            clearInterval(progressInterval);
+            this.els.imageProgressFill.style.width = '100%';
+            this.els.imageProgressText.textContent = 'Generating image... 100%';
+
             this.currentImageB64 = result.b64;
-            this.els.imageResult.innerHTML = `<img src="data:image/png;base64,${result.b64}" alt="Generated">`;
-            this.els.imageActions.classList.remove('hidden');
+            
+            setTimeout(() => {
+                this.els.imageProgressContainer.classList.add('hidden');
+                this.els.imageProgressFill.style.width = '0%';
+                const img = document.createElement('img');
+                img.src = `data:image/png;base64,${result.b64}`;
+                img.alt = 'Generated';
+                img.onclick = () => this.openLightbox(img.src);
+                this.els.imageResult.innerHTML = '';
+                this.els.imageResult.appendChild(img);
+                this.els.imageActions.classList.remove('hidden');
+            }, 500);
         } catch (e) {
+            clearInterval(progressInterval);
+            this.els.imageProgressContainer.classList.add('hidden');
+            this.els.imageProgressFill.style.width = '0%';
             this.els.imageResult.innerHTML = `<span style="color:red">${e.message}</span>`;
         } finally {
             this.els.generateImageBtn.disabled = false;
@@ -6242,23 +6290,40 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
     async copyGeneratedImage() {
         if (!this.currentImageB64) return;
         try {
-            const byteCharacters = atob(this.currentImageB64);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: 'image/png' });
+            // Convert base64 to blob via fetch for reliable clipboard write
+            const dataUrl = `data:image/png;base64,${this.currentImageB64}`;
+            const response = await fetch(dataUrl);
+            const blob = await response.blob();
             await navigator.clipboard.write([
-                new ClipboardItem({ 'image/png': blob })
+                new ClipboardItem({ [blob.type]: blob })
             ]);
-            this.els.copyImageBtn.innerHTML = `${Icons.create('check', { size: 16 })} Copied`;
+            this.els.copyImageBtn.innerHTML = `${Icons.create('check', { size: 16 })} Copied!`;
             setTimeout(() => {
                 this.els.copyImageBtn.innerHTML = `${Icons.create('copy', { size: 16 })} Copy`;
             }, 2000);
         } catch (e) {
-            alert('Copy failed');
+            console.warn('Clipboard write failed, trying alternative:', e);
+            // Fallback: try opening in new tab
+            try {
+                const newTab = window.open();
+                newTab.document.write(`<img src="data:image/png;base64,${this.currentImageB64}">`);
+            } catch (e2) {
+                alert('Copy failed: ' + e.message);
+            }
         }
+    }
+
+    // === IMAGE LIGHTBOX ===
+    openLightbox(src) {
+        if (!this.els.imageLightbox || !this.els.lightboxImg) return;
+        this.els.lightboxImg.src = src;
+        this.els.imageLightbox.classList.remove('hidden');
+    }
+
+    closeLightbox() {
+        if (!this.els.imageLightbox) return;
+        this.els.imageLightbox.classList.add('hidden');
+        this.els.lightboxImg.src = '';
     }
 
     // === TTS ===

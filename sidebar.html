@@ -327,8 +327,8 @@
             <label for="image-size-selector" class="sr-only">Select size</label>
             <select id="image-size-selector" aria-label="Select size">
               <option value="1024x1024">Square</option>
-              <option value="1536x1024">Landscape</option>
-              <option value="1024x1536">Portrait</option>
+              <option value="1216x832">Landscape</option>
+              <option value="832x1216">Portrait</option>
             </select>
           </div>
           <button id="generate-image-btn" class="btn btn-primary" style="width:100%;" aria-label="Generate image">
@@ -336,6 +336,17 @@
             <span>Generate</span>
           </button>
         </div>
+        
+        <!-- Image Generation Progress -->
+        <div id="image-progress-container" class="tts-progress-container hidden" style="margin-top: 16px;">
+          <div class="tts-progress-bar">
+            <div id="image-progress-fill" class="tts-progress-fill"></div>
+          </div>
+          <div class="tts-progress-info">
+            <div id="image-progress-text" class="tts-progress-text">Generating image... 0%</div>
+          </div>
+        </div>
+
         <div id="image-result" style="margin-top: 20px;" role="img" aria-label="Generated image" aria-live="polite">
         </div>
         <div id="image-actions" class="hidden" style="margin-top: 12px; display: flex; gap: 8px;" role="group"
@@ -954,6 +965,14 @@
       </div>
     </div>
   </template>
+
+  <!-- IMAGE LIGHTBOX MODAL -->
+  <div id="image-lightbox" class="lightbox-overlay hidden" role="dialog" aria-modal="true" aria-label="Expanded Image">
+    <button id="lightbox-close" class="lightbox-close-btn" aria-label="Close image">
+      <span data-icon="x" aria-hidden="true"></span>
+    </button>
+    <img id="lightbox-img" src="" alt="Expanded View" class="lightbox-content">
+  </div>
 
   <script src="icons.js"></script>
   <script src="storage.js"></script>
