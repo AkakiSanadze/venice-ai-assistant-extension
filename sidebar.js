@@ -5046,6 +5046,12 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                     } else if (response && response.error) {
                         console.warn('Transcript fetch error:', response.error);
                         this.renderMessage({ role: 'assistant', content: 'Warning: Could not fetch YouTube transcript.\n' + response.error, thinking: null });
+                        
+                        // Reset processing state to prevent UI freeze
+                        this.isProcessing = false;
+                        this.els.sendBtn.disabled = false;
+                        this.els.sendBtn.setAttribute('aria-disabled', 'false');
+                        this.els.sendBtn.classList.remove('processing');
                         return;
                     }
                 } catch (err) {
@@ -5053,6 +5059,12 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                     this.hideTranscriptLoading(loadingEl);
                     console.warn('Failed to fetch transcript:', err);
                     this.renderMessage({ role: 'assistant', content: 'Warning: Connection error - could not connect to YouTube.', thinking: null });
+                    
+                    // Reset processing state to prevent UI freeze
+                    this.isProcessing = false;
+                    this.els.sendBtn.disabled = false;
+                    this.els.sendBtn.setAttribute('aria-disabled', 'false');
+                    this.els.sendBtn.classList.remove('processing');
                     return;
                 }
             }
