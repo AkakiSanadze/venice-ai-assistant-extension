@@ -1118,6 +1118,9 @@ details.thinking.active-thinking summary {
   height: auto;
   max-height: 500px;
   object-fit: contain;
+  /* Prevent blurry upscaling/downscaling */
+  image-rendering: high-quality;
+  image-rendering: -webkit-optimize-contrast;
 }
 
 /* --- TTS VIEW --- */

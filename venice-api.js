@@ -993,6 +993,15 @@ class VeniceAPI {
     }
 
     async generateImage(prompt, model, size) {
+        // Parse size (e.g., "1024x1024" to width and height)
+        let width = 1024;
+        let height = 1024;
+        if (size && size.includes('x')) {
+            const parts = size.split('x');
+            width = parseInt(parts[0], 10) || 1024;
+            height = parseInt(parts[1], 10) || 1024;
+        }
+
         const resp = await fetch(`${this.baseUrl}/images/generations`, {
             method: 'POST',
             headers: {
@@ -1004,7 +1013,9 @@ class VeniceAPI {
                 model,
                 prompt,
                 n: 1,
-                size,
+                width,
+                height,
+                steps: 30, // Request higher quality generation
                 response_format: "b64_json",
                 output_format: "png"
             })
