@@ -1005,6 +1005,8 @@ class VeniceAPI {
                 prompt,
                 n: 1,
                 size, // Venice /images/generations requires OpenAI standard format
+                safe_mode: false, // Disable server-side NSFW blur filter
+                hide_watermark: true,
                 response_format: "b64_json",
                 output_format: "png"
             })
