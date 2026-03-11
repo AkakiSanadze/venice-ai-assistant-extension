@@ -251,6 +251,40 @@ After the hooks, write one complete post using the best hook, formatted for Inst
     isBuiltin: true
   },
   {
+    id: 'up-twitter-feed-analyst',
+    title: "📊 Twitter Feed Analyzer",
+    content: `Analyze the provided Twitter/X feed or list.
+    
+    Structure your response as follows:
+    1. **Overview** — What is the general sentiment and main focus of this feed?
+    2. **Key Themes** — Identify 3-5 major topics being discussed.
+    3. **Top Influencers** — Who are the most engaging or important authors in this context?
+    4. **Hot Takes & Trends** — Any controversial opinions or emerging trends?
+    5. **Actionable Insights** — What can we learn or do based on this information?
+    
+    Be objective and highlight patterns across different posts.`,
+    category: "twitter",
+    requiresPageContent: true,
+    isBuiltin: true
+  },
+  {
+    id: 'up-twitter-deep-analyst',
+    title: "🧵 Tweet Deep Analyst",
+    content: `Perform a deep analysis of this specific tweet and its surrounding conversation/comments.
+    
+    Structure your response as follows:
+    1. **The Core Message** — What is the main point of the original tweet?
+    2. **Public Reaction** — Summarize the overall sentiment of the comments (Supportive, Critical, Sarcastic, etc.).
+    3. **Key Arguments** — Highlight the strongest counter-arguments or additional points made in the replies.
+    4. **Q&A & FAQs** — Identify any common questions asked in the comments and how they were (or weren't) answered.
+    5. **Impact Assessment** — How much engagement did this get and why did it resonate (or fail)?
+    
+    Focus on the dynamics between the author and the audience.`,
+    category: "twitter",
+    requiresPageContent: true,
+    isBuiltin: true
+  },
+  {
     id: 'up-social-reply',
     title: "💬 Comment Reply Crafter",
     content: `I need to respond to comments on my social media post. Here are the comments:

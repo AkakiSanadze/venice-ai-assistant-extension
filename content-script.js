@@ -24,11 +24,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         case 'getTwitterData':
             getTwitterPosts(msg.options || {}).then(posts => {
-                sendResponse({ success: true, tweets: posts, url: location.href });
+                sendResponse({ 
+                    success: true, 
+                    tweets: posts, 
+                    url: location.href,
+                    pageType: detectTwitterPageType()
+                });
             }).catch(err => {
                 sendResponse({ success: false, error: err.message });
             });
             return true; // Keep channel open for async
+
+        case 'getTwitterThread':
+            getTwitterThread(msg.options || {}).then(data => {
+                sendResponse({ 
+                    success: true, 
+                    mainTweet: data.mainTweet,
+                    comments: data.comments,
+                    url: location.href,
+                    pageType: 'tweet'
+                });
+            }).catch(err => {
+                sendResponse({ success: false, error: err.message });
+            });
+            return true;
     }
 });
 
@@ -488,6 +507,27 @@ async function getYouTubeTranscript() {
 // === TWITTER/X POST EXTRACTION ===
 
 /**
+ * Detect current Twitter page type
+ */
+function detectTwitterPageType() {
+    const path = location.pathname;
+    if (path === '/home' || path === '/') return 'home';
+    if (path.match(/\/i\/lists\/\d+/)) return 'list';
+    if (path.match(/\/\w+\/status\/\d+/)) return 'tweet';
+    if (path.match(/\/\w+\/lists/)) return 'user_lists';
+    if (path === '/search' || path.startsWith('/search')) return 'search';
+    
+    // Check for profile (usually /username, but avoid reserved words)
+    if (path.match(/^\/[\w]+\/?$/)) {
+        const reserved = ['home', 'explore', 'notifications', 'messages', 'settings', 'i', 'search', 'compose'];
+        const segment = path.split('/')[1];
+        if (!reserved.includes(segment)) return 'profile';
+    }
+    
+    return 'feed';
+}
+
+/**
  * Check if current page is Twitter/X
  */
 function isTwitterPage() {
@@ -502,8 +542,7 @@ function isTwitterPage() {
  * Check if current page is a single tweet page
  */
 function isTweetPage() {
-    return isTwitterPage() && 
-           location.pathname.match(/\/\w+\/status\/\d+/);
+    return isTwitterPage() && detectTwitterPageType() === 'tweet';
 }
 
 /**
@@ -624,12 +663,22 @@ function extractTweetData(tweetElement) {
             }
         }
         
-        // Media
-        const images = Array.from(tweetElement.querySelectorAll('[data-testid="tweetPhoto"] img'))
+        // Media (Images & Video Thumbnails)
+        let images = Array.from(tweetElement.querySelectorAll('[data-testid="tweetPhoto"] img'))
             .map(img => img.src)
             .filter(src => !src.includes('profile_images')); // Exclude profile pics
         
-        const hasVideo = tweetElement.querySelector('[data-testid="videoPlayer"]') !== null;
+        const videoElement = tweetElement.querySelector('[data-testid="videoPlayer"]');
+        const hasVideo = videoElement !== null;
+        let videoThumbnails = [];
+
+        if (hasVideo) {
+            // Twitter often uses a poster image or an img inside the video container
+            const poster = videoElement.querySelector('video')?.getAttribute('poster');
+            const img = videoElement.querySelector('img')?.src;
+            if (poster) videoThumbnails.push(poster);
+            if (img && !videoThumbnails.includes(img)) videoThumbnails.push(img);
+        }
         
         // Check if reply
         const isReply = tweetElement.closest('[data-testid="cellInnerDiv"]')?.previousElementSibling !== null;
@@ -684,6 +733,7 @@ function extractTweetData(tweetElement) {
             url: `https://twitter.com${tweetPath}`,
             media: {
                 images: images,
+                videoThumbnails: videoThumbnails,
                 hasVideo: hasVideo
             },
             engagement: {
@@ -837,6 +887,81 @@ function parseMetricCount(str) {
 }
 
 /**
+ * Auto-scroll to load more posts
+ */
+async function autoScrollAndCollect(maxPosts = 30, maxScrolls = 5) {
+    let collected = [];
+    
+    // Initial collection
+    const initial = extractAllVisibleTweets();
+    initial.forEach(t => {
+        if (!collected.find(c => c.id === t.id)) collected.push(t);
+    });
+
+    if (collected.length >= maxPosts) return collected;
+
+    for (let i = 0; i < maxScrolls; i++) {
+        // Scroll down
+        window.scrollBy(0, window.innerHeight * 1.5);
+        // Wait for load
+        await new Promise(r => setTimeout(r, 1200));
+        
+        const visible = extractAllVisibleTweets();
+        let newCount = 0;
+        visible.forEach(t => {
+            if (!collected.find(c => c.id === t.id)) {
+                collected.push(t);
+                newCount++;
+            }
+        });
+
+        if (collected.length >= maxPosts || newCount === 0) break;
+    }
+    
+    return collected;
+}
+
+/**
+ * Extract thread/comments from a single tweet page
+ */
+async function getTwitterThread(options = {}) {
+    const { maxComments = 20 } = options;
+    
+    if (!isTweetPage()) {
+        throw new Error('Not a single tweet page');
+    }
+
+    // 1. Extract main tweet
+    const tweetElements = document.querySelectorAll('article[data-testid="tweet"]');
+    if (tweetElements.length === 0) {
+        await waitForElement('article[data-testid="tweet"]');
+    }
+    
+    const allVisible = extractAllVisibleTweets();
+    const mainTweetId = getTweetIdFromUrl();
+    const mainTweet = allVisible.find(t => t.id === mainTweetId) || allVisible[0];
+    
+    // 2. Extract comments/replies
+    // On a status page, the first tweet is usually the main one, and subsequent ones are replies
+    let comments = allVisible.filter(t => t.id !== mainTweetId);
+    
+    // If not enough comments, scroll a bit
+    if (comments.length < maxComments) {
+        const scrolled = await autoScrollAndCollect(maxComments + 5, 3);
+        scrolled.forEach(t => {
+            if (t.id !== mainTweetId && !comments.find(c => c.id === t.id)) {
+                comments.push(t);
+            }
+        });
+    }
+
+    return {
+        mainTweet,
+        comments: comments.slice(0, maxComments)
+    };
+}
+
+/**
  * Extract all visible tweets on the page
  */
 function extractAllVisibleTweets() {
@@ -927,12 +1052,17 @@ async function extractMainTweet() {
  * Get all visible tweets with options
  */
 async function getTwitterPosts(options = {}) {
-    const { limit = 10, includeReplies = false } = options;
+    const { limit = 20, includeReplies = false, autoScroll = true } = options;
     
     if (!isTwitterPage()) {
         throw new Error('Not a Twitter/X page');
     }
     
+    // If autoScroll is enabled, use the scrolling collector
+    if (autoScroll) {
+        return await autoScrollAndCollect(limit, 3);
+    }
+
     // Wait for tweets to load
     await waitForElement('article[data-testid="tweet"]');
     
@@ -956,34 +1086,6 @@ async function getTwitterPosts(options = {}) {
             results.push(tweetData);
         } catch (e) {
             console.warn('Failed to extract tweet:', e);
-        }
-    }
-    
-    // Extract X Articles if we haven't reached the limit
-    if (results.length < limit) {
-        const articleSelectors = [
-            'article[data-testid="article"]',
-            '[data-testid="articleBody"]',
-            'div[data-testid="article"]'
-        ];
-        
-        for (const selector of articleSelectors) {
-            const articleElements = document.querySelectorAll(selector);
-            if (articleElements.length > 0) {
-                for (const element of articleElements) {
-                    if (results.length >= limit) break;
-                    
-                    try {
-                        const articleData = extractArticleData(element);
-                        if (articleData) {
-                            results.push(articleData);
-                        }
-                    } catch (e) {
-                        console.warn('Failed to extract article:', e);
-                    }
-                }
-                break;
-            }
         }
     }
     

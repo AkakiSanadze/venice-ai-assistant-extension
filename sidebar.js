@@ -728,8 +728,17 @@ class App {
     }
 
     bindRuntimeMessages() {
-        // Placeholder for runtime message handling
-        // Currently not needed but reserved for future use
+        // Listen for tab switches to update contextual suggestions
+        chrome.tabs.onActivated.addListener(async (activeInfo) => {
+            await this.updateEmptyState();
+        });
+
+        // Listen for navigation updates to update contextual suggestions
+        chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+            if (changeInfo.status === 'complete' && tab.active) {
+                await this.updateEmptyState();
+            }
+        });
     }
 
     cacheElements() {
@@ -1852,7 +1861,7 @@ class App {
     /**
      * Show or hide the empty state based on conversation messages
      */
-    updateEmptyState() {
+    async updateEmptyState() {
         if (!this.els.chatEmptyState) return;
 
         const hasMessages = this.currentConversation &&
@@ -1861,10 +1870,66 @@ class App {
 
         this.els.chatEmptyState.classList.toggle('hidden', hasMessages);
 
-        // Initialize icons in empty state if visible
+        // If visible, check for contextual suggestions
         if (!hasMessages) {
+            try {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (tab && (tab.url?.includes('twitter.com') || tab.url?.includes('x.com'))) {
+                    this.showTwitterSuggestions(tab.url);
+                } else {
+                    this.restoreDefaultSuggestions();
+                }
+            } catch (e) {
+                console.warn('Failed to update contextual suggestions:', e);
+            }
             Icons.replaceAllInDocument();
         }
+    }
+
+    /**
+     * Show Twitter-specific suggestion chips
+     */
+    showTwitterSuggestions(url) {
+        const container = this.els.chatEmptyState.querySelector('.suggestion-chips');
+        if (!container) return;
+
+        // Detect if it's a single tweet or a feed
+        const isTweet = url.includes('/status/');
+        
+        let suggestions = [];
+        if (isTweet) {
+            suggestions = [
+                { text: "🧵 Deep Analyze Tweet & Replies", prompt: "📊 Please analyze this tweet and all its replies. What are the key arguments and overall sentiment?" },
+                { text: "💬 Summarize Reactions", prompt: "Summarize the reactions to this tweet. What is the consensus?" },
+                { text: "🔍 Fact-Check Claims", prompt: "Extract the main claims from this tweet and perform a critical analysis/fact-check." }
+            ];
+        } else {
+            suggestions = [
+                { text: "📊 Summarize Feed", prompt: "Analyze this Twitter feed. What are the main trending topics and key themes being discussed?" },
+                { text: "🔍 Identify Influencers", prompt: "Who are the most influential voices in this feed and what are they focusing on?" },
+                { text: "📈 Trend Analysis", prompt: "What emerging trends or patterns can you identify from these recent posts?" }
+            ];
+        }
+
+        container.innerHTML = suggestions.map(s => `
+            <button class="suggestion-chip" data-suggestion="${s.prompt}" aria-label="${s.text}">
+                ${s.text}
+            </button>
+        `).join('');
+    }
+
+    /**
+     * Restore default suggestion chips
+     */
+    restoreDefaultSuggestions() {
+        const container = this.els.chatEmptyState.querySelector('.suggestion-chips');
+        if (!container) return;
+
+        container.innerHTML = `
+            <button class="suggestion-chip" data-suggestion="Explain quantum computing" aria-label="Explain quantum computing">Explain quantum computing</button>
+            <button class="suggestion-chip" data-suggestion="Write me a poem" aria-label="Write me a poem">Write me a poem</button>
+            <button class="suggestion-chip" data-suggestion="Help me write code" aria-label="Help me write code">Help me write code</button>
+        `;
     }
 
     /**
@@ -5014,8 +5079,27 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
                 this.currentConversation.metadata = this.currentConversation.metadata || {};
                 this.currentConversation.metadata.pageContext = pageContext;
 
-                const contextStr = `\n\n[ ]\n [ : ${pageContext.title}\nURL: ${pageContext.url}\n\n${pageContext.content}\n---`;
+                const contextStr = `\n\n[CONTEXT INFORMATION]\n[Source: ${pageContext.title}\nURL: ${pageContext.url}\n\n${pageContext.content}\n---`;
                 content += contextStr;
+
+                // AUTO-ATTACH MEDIA FOR VISION MODELS
+                if (pageContext.contextImages && pageContext.contextImages.length > 0) {
+                    const visionModels = this.models.visionModels || [];
+                    const isVisionModel = visionModels.some(m => m.id === this.currentModel);
+                    
+                    if (isVisionModel) {
+                        // Limit to 4 images to avoid context bloat
+                        const imagesToAttach = pageContext.contextImages.slice(0, 4);
+                        imagesToAttach.forEach(url => {
+                            // Venice API can take plain URLs for image_url
+                            this.attachedImages.push({
+                                type: 'url',
+                                url: url
+                            });
+                        });
+                        console.log(`[DEBUG] Auto-attached ${imagesToAttach.length} images from page context`);
+                    }
+                }
             }
         }
 
@@ -5814,38 +5898,63 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
             // Twitter/X URL detection
             if (tab.url?.includes('twitter.com') || tab.url?.includes('x.com')) {
                 try {
+                    // First, get page info and basic data
                     const response = await chrome.tabs.sendMessage(tab.id, {
                         action: 'getTwitterData',
-                        options: { limit: 20, includeReplies: true }
+                        options: { limit: 20, includeReplies: true, autoScroll: true }
                     });
-                    if (response?.success && response.tweets && response.tweets.length > 0) {
-                        return {
-                            title: 'Twitter/X Posts',
-                            url: response.url || tab.url,
-                            content: this.formatTwitterContext(response.tweets)
-                        };
-                    }
-                } catch (e) {
-                    try {
-                        await chrome.scripting.executeScript({
-                            target: { tabId: tab.id },
-                            files: ['content-script.js']
-                        });
-                        await new Promise(r => setTimeout(r, 500));
-                        const response = await chrome.tabs.sendMessage(tab.id, {
-                            action: 'getTwitterData',
-                            options: { limit: 20, includeReplies: true }
-                        });
-                        if (response?.success && response.tweets && response.tweets.length > 0) {
+                    
+                    if (response?.success) {
+                        const pageType = response.pageType || 'feed';
+                        
+                        // If it's a single tweet page, get the full thread
+                        if (pageType === 'tweet') {
+                            const threadResponse = await chrome.tabs.sendMessage(tab.id, {
+                                action: 'getTwitterThread',
+                                options: { maxComments: 25 }
+                            });
+                            
+                            if (threadResponse?.success) {
+                                return {
+                                    title: `Tweet Analysis: @${threadResponse.mainTweet?.author?.handle}`,
+                                    url: threadResponse.url || tab.url,
+                                    pageType: 'tweet',
+                                    content: this.formatTwitterContext({
+                                        pageType: 'tweet',
+                                        mainTweet: threadResponse.mainTweet,
+                                        comments: threadResponse.comments
+                                    }),
+                                    contextImages: this.extractMediaUrls({
+                                        mainTweet: threadResponse.mainTweet,
+                                        comments: threadResponse.comments
+                                    })
+                                };
+                            }
+                        }
+                        
+                        // Default handling for home/list/search
+                        if (response.tweets && response.tweets.length > 0) {
+                            let title = 'Twitter/X Posts';
+                            if (pageType === 'home') title = 'Twitter/X Home Feed';
+                            else if (pageType === 'list') title = 'Twitter/X List';
+                            else if (pageType === 'profile') title = `Twitter/X Profile: ${tab.title}`;
+
                             return {
-                                title: 'Twitter/X Posts',
+                                title: title,
                                 url: response.url || tab.url,
-                                content: this.formatTwitterContext(response.tweets)
+                                pageType: pageType,
+                                content: this.formatTwitterContext({
+                                    pageType: pageType,
+                                    tweets: response.tweets
+                                }),
+                                contextImages: this.extractMediaUrls({
+                                    tweets: response.tweets
+                                })
                             };
                         }
-                    } catch (injectErr) {
-                        console.warn('Failed to inject content script for Twitter:', injectErr);
                     }
+                } catch (e) {
+                    console.warn('Failed to fetch Twitter context:', e);
                 }
             }
 
@@ -5900,96 +6009,121 @@ To import this shared chat, copy this data and use the "Import Shared Chat" func
      * Format Twitter/X posts and articles for AI context
      * Handles both tweets and articles (type: 'article' vs 'tweet' or undefined)
      */
-    formatTwitterContext(items) {
-        if (!items || items.length === 0) return '';
-
-        // Determine if we have articles or tweets
-        const hasArticles = items.some(item => item.type === 'article');
-        let context = hasArticles
-            ? '[Twitter/X Content - Posts & Articles]\n\n'
-            : '[Twitter/X Posts]\n\n';
-
-        items.forEach((item, i) => {
-            // Check if this is an article (type: 'article') or a tweet (type: 'tweet' or undefined)
-            if (item.type === 'article') {
-                // Article format
-                context += `Article ${i + 1}:\n`;
-                if (item.title) {
-                    context += `Title: ${item.title}\n`;
+    /**
+     * Extract media URLs from Twitter data for Vision analysis
+     */
+    extractMediaUrls(data) {
+        const urls = new Set();
+        
+        const processTweet = (tweet) => {
+            if (tweet.media) {
+                if (tweet.media.images) {
+                    tweet.media.images.forEach(url => urls.add(url));
                 }
-                context += `Author: ${item.author.name} (${item.author.handle})`;
-                if (item.author.verified) {
-                    context += ' \u2713';
-                    if (item.author.verifiedType === 'gold') context += ' (Gold)';
-                    else if (item.author.verifiedType === 'gray') context += ' (Gray)';
-                }
-                context += '\n';
-                context += `Content: ${item.text}\n`;
-                if (item.timestamp) {
-                    context += `Date: ${item.timestamp}\n`;
-                }
-                if (item.media?.images?.length > 0) {
-                    context += `Images: ${item.media.images.length}\n`;
-                }
-                if (item.media?.hasVideo) {
-                    context += `Video: Included\n`;
-                }
-            } else {
-                // Tweet format (existing)
-                context += `Post ${i + 1}:\n`;
-
-                // Author info with verification status
-                let authorInfo = `Author: ${item.author.name} (${item.author.handle})`;
-                if (item.author.verified) {
-                    authorInfo += ' \u2713';
-                    if (item.author.verifiedType === 'gold') authorInfo += ' (Gold)';
-                    else if (item.author.verifiedType === 'gray') authorInfo += ' (Gray)';
-                }
-                context += authorInfo + '\n';
-
-                context += `Text: ${item.text}\n`;
-
-                // Add quoted tweet if present
-                if (item.isQuote && item.quotedTweet) {
-                    context += `Quote: @${item.quotedTweet.author}: "${item.quotedTweet.text}"\n`;
-                }
-
-                // Add link card if present
-                if (item.linkCard) {
-                    context += `Link: ${item.linkCard.title}\n`;
-                    context += `URL: ${item.linkCard.url}\n`;
-                    if (item.linkCard.description) {
-                        context += `Description: ${item.linkCard.description}\n`;
-                    }
-                }
-
-                if (item.timestamp) {
-                    context += `Date: ${item.timestamp}\n`;
-                }
-
-                if (item.media?.images?.length > 0) {
-                    context += `Images: ${item.media.images.length}\n`;
-                }
-                if (item.media?.hasVideo) {
-                    context += `Video: Included\n`;
-                }
-
-                // Engagement metrics including views
-                let engagement = `Engagement: \uD83D\uDCAC ${item.engagement.replies} \uD83D\uDD01 ${item.engagement.retweets} \u2764\uFE0F ${item.engagement.likes}`;
-                if (item.engagement.views > 0) {
-                    engagement += ` \uD83D\uDC41\uFE0F ${item.engagement.views}`;
-                }
-                context += engagement + '\n';
-
-                // Add reply indicator
-                if (item.isReply) {
-                    context += `(This is a reply to another post)\n`;
+                if (tweet.media.videoThumbnails) {
+                    tweet.media.videoThumbnails.forEach(url => urls.add(url));
                 }
             }
+        };
 
+        if (data.mainTweet) processTweet(data.mainTweet);
+        if (data.comments) data.comments.forEach(processTweet);
+        if (data.tweets) data.tweets.forEach(processTweet);
+
+        return Array.from(urls);
+    }
+
+    formatTwitterContext(data) {
+        if (!data) return '';
+
+        // Handle the new data structure (pageType + items/threads)
+        const { pageType, tweets, mainTweet, comments } = data;
+        const items = tweets || (mainTweet ? [mainTweet, ...comments] : []);
+
+        if (items.length === 0) return '';
+
+        let context = '';
+        
+        if (pageType === 'tweet' && mainTweet) {
+            context = `[Twitter/X Single Tweet Analysis]\n\n`;
+            context += `MAIN TWEET:\n`;
+            context += this.formatSingleTweet(mainTweet);
+            context += `\nCOMMENTS & REPLIES:\n`;
+            comments.forEach((comment, i) => {
+                context += `\nComment ${i + 1}:\n`;
+                context += this.formatSingleTweet(comment);
+            });
+            return context;
+        }
+
+        // Determine heading based on page type
+        if (pageType === 'home') context = '[Twitter/X Home Feed Summary]\n\n';
+        else if (pageType === 'list') context = '[Twitter/X List Summary]\n\n';
+        else if (pageType === 'profile') context = '[Twitter/X Profile Posts Summary]\n\n';
+        else if (pageType === 'search') context = '[Twitter/X Search Results Summary]\n\n';
+        else context = '[Twitter/X Posts]\n\n';
+
+        items.forEach((item, i) => {
+            context += `Post ${i + 1}:\n`;
+            context += this.formatSingleTweet(item);
             context += `---\n`;
         });
 
+        return context;
+    }
+
+    /**
+     * Helper to format a single tweet or article
+     */
+    formatSingleTweet(item) {
+        let context = '';
+        if (item.type === 'article') {
+            if (item.title) context += `Title: ${item.title}\n`;
+            context += `Author: ${item.author.name} (${item.author.handle})`;
+            if (item.author.verified) context += ' ✓';
+            context += '\n';
+            context += `Content: ${item.text}\n`;
+        } else {
+            let authorInfo = `Author: ${item.author.name} (${item.author.handle})`;
+            if (item.author.verified) {
+                authorInfo += ' ✓';
+                if (item.author.verifiedType === 'gold') authorInfo += ' (Gold)';
+                else if (item.author.verifiedType === 'gray') authorInfo += ' (Gray)';
+            }
+            context += `Text: ${item.text}\n`;
+            
+            if (item.media?.images?.length > 0) {
+                context += `Images Context:\n`;
+                item.media.images.forEach((url, idx) => {
+                    context += `- [Image ${idx + 1}]: ${url}\n`;
+                });
+            }
+
+            if (item.media?.videoThumbnails?.length > 0) {
+                context += `Video Thumbnails:\n`;
+                item.media.videoThumbnails.forEach((url, idx) => {
+                    context += `- [Video Thumbnail ${idx + 1}]: ${url}\n`;
+                });
+            }
+
+            if (item.isQuote && item.quotedTweet) {
+                context += `Quote: @${item.quotedTweet.author}: "${item.quotedTweet.text}"\n`;
+            }
+
+            if (item.linkCard) {
+                context += `Link: ${item.linkCard.title}\n`;
+                context += `URL: ${item.linkCard.url}\n`;
+            }
+
+            // Engagement metrics
+            let engagement = `Engagement: 💬 ${item.engagement.replies} 🔁 ${item.engagement.retweets} ❤️ ${item.engagement.likes}`;
+            if (item.engagement.views > 0) engagement += ` 👁️ ${item.engagement.views}`;
+            context += engagement + '\n';
+
+            if (item.isReply) context += `(This is a reply to another post)\n`;
+        }
+        
+        if (item.timestamp) context += `Date: ${item.timestamp}\n`;
         return context;
     }
 

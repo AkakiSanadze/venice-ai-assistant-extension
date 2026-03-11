@@ -596,12 +596,23 @@ class VeniceAPI {
                     { type: 'text', text: msg.content }
                 ];
                 for (const img of msg.images) {
-                    content.push({
-                        type: 'image_url',
-                        image_url: {
-                            url: `data:${img.mimeType};base64,${img.base64}`
-                        }
-                    });
+                    if (img.type === 'url' || (typeof img.url === 'string' && !img.base64)) {
+                        // Public URL (e.g., from Twitter)
+                        content.push({
+                            type: 'image_url',
+                            image_url: {
+                                url: img.url
+                            }
+                        });
+                    } else if (img.base64) {
+                        // Local/Uploaded base64 image
+                        content.push({
+                            type: 'image_url',
+                            image_url: {
+                                url: `data:${img.mimeType};base64,${img.base64}`
+                            }
+                        });
+                    }
                 }
                 apiMessages.push({ role: 'user', content });
             } else {
